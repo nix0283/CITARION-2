@@ -42,6 +42,7 @@ import type { BuiltInIndicator } from "@/lib/indicators/builtin";
 import { useTradingHotkeys, HOTKEYS_HELP } from "@/hooks/use-trading-hotkeys";
 import { OneClickTradingDialog, type OneClickTradeParams, type OneClickTradingConfig } from "@/components/chart/one-click-trading";
 import { useOrderMarkers, type OrderMarker, type ProcessedMarker } from "@/components/chart/order-markers";
+import { usePriceContext } from "@/components/providers/price-provider";
 
 // Timeframes
 const TIMEFRAMES = [
@@ -144,12 +145,15 @@ export function PriceChart() {
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  
+
   // Store for indicator series - now includes pane index
   const overlaySeriesRef = useRef<Map<string, ISeriesApi<"Line" | "Histogram">[]>>(new Map());
   const paneSeriesRef = useRef<Map<string, ISeriesApi<"Line" | "Histogram">[]>>(new Map());
   // Store price lines for indicators (for RSI levels 70/30)
   const priceLinesRef = useRef<Map<string, any[]>>(new Map());
+
+  // Use existing WebSocket connection from PriceProvider
+  const { prices, connectionStatus } = usePriceContext();
 
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
@@ -162,11 +166,10 @@ export function PriceChart() {
   const [priceChange, setPriceChange] = useState<number>(0);
   const [activeIndicators, setActiveIndicators] = useState<IndicatorConfig[]>([]);
   const [showIndicatorsPanel, setShowIndicatorsPanel] = useState(true);
-  
-  // Real-time connection status
-  const [isRealtimeConnected, setIsRealtimeConnected] = useState(false);
-  const realtimePollRef = useRef<NodeJS.Timeout | null>(null);
-  
+
+  // Real-time connection status - now from PriceProvider WebSocket
+  const isRealtimeConnected = connectionStatus === "connected";
+
   // Tooltip state
   const [tooltip, setTooltip] = useState<TooltipData>({
     time: null,
@@ -537,85 +540,44 @@ export function PriceChart() {
     };
   }, [symbol, timeframe]);
 
-  // Real-time polling for latest candle
+  // Real-time price updates from existing WebSocket connection (PriceProvider)
   useEffect(() => {
-    if (isLoading || !symbol) return;
+    if (isLoading || !symbol || candles.length === 0) return;
 
-    const pollLatestCandle = async () => {
-      try {
-        const response = await fetch(
-          `/api/ohlcv?symbol=${symbol}&interval=${timeframe}&limit=1&forceFetch=true`
-        );
+    // Get the current symbol's price from WebSocket
+    const priceData = prices[symbol];
+    if (!priceData || !isRealtimeConnected) return;
 
-        if (response.ok) {
-          const data = await response.json();
+    // Update current price from WebSocket
+    setCurrentPrice(priceData.price);
 
-          if (data.success && data.ohlcv && data.ohlcv.length > 0) {
-            const latestCandle = data.ohlcv[0];
-            const newClose = latestCandle[4];
-            
-            setIsRealtimeConnected(true);
-            
-            // Update current price
-            setCurrentPrice(newClose);
-            
-            // Update the last candle in the array
-            setCandles((prevCandles) => {
-              if (prevCandles.length === 0) return prevCandles;
-              
-              const lastCandle = prevCandles[prevCandles.length - 1];
-              const newTime = Math.floor(latestCandle[0] / 1000);
-              
-              // If same candle (same time), update it
-              if (lastCandle.time === newTime) {
-                const updated = [...prevCandles];
-                updated[updated.length - 1] = {
-                  time: newTime as Time,
-                  open: latestCandle[1],
-                  high: latestCandle[2],
-                  low: latestCandle[3],
-                  close: newClose,
-                  volume: latestCandle[5],
-                };
-                return updated;
-              }
-              
-              // New candle - add it
-              if (newTime > (lastCandle.time as number)) {
-                return [...prevCandles, {
-                  time: newTime as Time,
-                  open: latestCandle[1],
-                  high: latestCandle[2],
-                  low: latestCandle[3],
-                  close: newClose,
-                  volume: latestCandle[5],
-                }];
-              }
-              
-              return prevCandles;
-            });
-          }
-        }
-      } catch (error) {
-        console.error('[Realtime] Poll error:', error);
-        setIsRealtimeConnected(false);
+    // Update the last candle in real-time using WebSocket price
+    setCandles((prevCandles) => {
+      if (prevCandles.length === 0) return prevCandles;
+
+      const lastCandle = prevCandles[prevCandles.length - 1];
+      const newPrice = priceData.price;
+
+      // Update the last candle with new price data
+      // The high/low may need to be adjusted based on the new price
+      const updated = [...prevCandles];
+      updated[updated.length - 1] = {
+        ...lastCandle,
+        close: newPrice,
+        high: Math.max(lastCandle.high, newPrice),
+        low: Math.min(lastCandle.low, newPrice),
+      };
+      return updated;
+    });
+
+    // Recalculate price change
+    if (candles.length > 0) {
+      const firstOpen = candles[0].open;
+      if (firstOpen > 0) {
+        setPriceChange(((priceData.price - firstOpen) / firstOpen) * 100);
       }
-    };
-
-    // Poll every 3 seconds
-    realtimePollRef.current = setInterval(pollLatestCandle, 3000);
-    
-    // Initial poll
-    pollLatestCandle();
-
-    return () => {
-      if (realtimePollRef.current) {
-        clearInterval(realtimePollRef.current);
-        realtimePollRef.current = null;
-      }
-      setIsRealtimeConnected(false);
-    };
-  }, [symbol, timeframe, isLoading]);
+    }
+  }, [prices, symbol, isLoading, candles.length, isRealtimeConnected]);
 
   // Update chart data
   useEffect(() => {
