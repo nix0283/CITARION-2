@@ -449,8 +449,10 @@ model BotConfig {
   dcaMaxPriceDiff      Float   @default(10) // Max % distance from first to last order
 
   // ==================== TAKE-PROFIT STRATEGY ====================
-  tpStrategy     String  @default("ONE_TARGET") // ONE_TARGET, MULTIPLE_TARGETS, ALL_TARGETS
-  tpTargetCount  Int     @default(1) // Number of TP targets (1-10)
+  // 9 Cornix-compatible strategies: EVENLY_DIVIDED, ONE_TARGET, TWO_TARGETS, THREE_TARGETS, 
+  // FIFTY_ON_FIRST, DECREASING_EXP, INCREASING_EXP, SKIP_FIRST, CUSTOM_RATIOS
+  tpStrategy     String  @default("EVENLY_DIVIDED") 
+  tpTargetCount  Int     @default(3) // Number of TP targets (1-10)
   tpCustomRatios String? // JSON: [30, 40, 30] custom percentages
 
   // Take Profit Grace (Cornix-compatible)

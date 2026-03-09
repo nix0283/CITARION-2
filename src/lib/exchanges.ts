@@ -621,6 +621,84 @@ export function getWalletAuthExchanges(): Exchange[] {
 }
 
 // ============================================================
+// DOMAIN VALIDATION (Restricted Domains)
+// ============================================================
+
+/**
+ * Restricted domains that are NOT supported by Cornix or CITARION
+ * These are regional/regulated versions of exchanges
+ */
+export const RESTRICTED_DOMAINS: Record<string, string[]> = {
+  okx: ["okx.eu", "okx.us"],
+  bybit: ["bybit.eu"],
+  binance: ["binance.us"],
+}
+
+/**
+ * Check if a domain is restricted for a given exchange
+ * @param exchangeId - Exchange identifier (e.g., "binance", "okx", "bybit")
+ * @param domain - Domain to check (e.g., "okx.eu", "binance.us")
+ * @returns true if domain is restricted, false otherwise
+ */
+export function isRestrictedDomain(exchangeId: string, domain: string): boolean {
+  const restricted = RESTRICTED_DOMAINS[exchangeId.toLowerCase()]
+  if (!restricted) return false
+  
+  const normalizedDomain = domain.toLowerCase().trim()
+  return restricted.some(d => normalizedDomain === d || normalizedDomain.endsWith(`.${d}`))
+}
+
+/**
+ * Validate exchange domain and return validation result
+ * @param exchangeId - Exchange identifier
+ * @param domain - Domain to validate
+ * @returns Object with validation result and warning message if restricted
+ */
+export function validateExchangeDomain(exchangeId: string, domain: string): {
+  valid: boolean;
+  warning?: string;
+  restricted?: boolean;
+} {
+  if (isRestrictedDomain(exchangeId, domain)) {
+    return {
+      valid: false,
+      restricted: true,
+      warning: `⚠️ Домен ${domain} не поддерживается. ${exchangeId.toUpperCase()} имеет ограничения для этого региона. Используйте основной домен.`,
+    }
+  }
+  
+  return { valid: true }
+}
+
+/**
+ * Get list of restricted domains for an exchange
+ * @param exchangeId - Exchange identifier
+ * @returns Array of restricted domains
+ */
+export function getRestrictedDomains(exchangeId: string): string[] {
+  return RESTRICTED_DOMAINS[exchangeId.toLowerCase()] || []
+}
+
+/**
+ * Check if API URL is for a restricted domain
+ * @param apiUrl - API URL to check
+ * @returns true if URL points to a restricted domain
+ */
+export function isRestrictedApiUrl(apiUrl: string): boolean {
+  const url = apiUrl.toLowerCase()
+  
+  for (const [exchangeId, domains] of Object.entries(RESTRICTED_DOMAINS)) {
+    for (const domain of domains) {
+      if (url.includes(domain)) {
+        return true
+      }
+    }
+  }
+  
+  return false
+}
+
+// ============================================================
 // EXCHANGE SUMMARY
 // ============================================================
 

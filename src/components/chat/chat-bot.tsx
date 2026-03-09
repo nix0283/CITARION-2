@@ -31,6 +31,11 @@ import {
   WifiOff,
   Wifi,
   Loader2,
+  Settings,
+  X,
+  Info,
+  Edit3,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -67,6 +72,12 @@ interface ParsedSignal {
   stopLoss?: number;
   leverage: number;
   marketType: "SPOT" | "FUTURES";
+  // Position data (if already executed)
+  id?: string;
+  positionId?: string;
+  avgEntryPrice?: number;
+  totalAmount?: number;
+  unrealizedPnl?: number;
 }
 
 function generateId(): string {
@@ -299,6 +310,185 @@ export function ChatBot() {
     }
   };
 
+  // Get balance
+  const handleBalance = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/demo/trade");
+      const data = await response.json();
+
+      const balance = data.balance || { USDT: 10000 };
+      let balanceMsg = `💰 **Баланс аккаунта**\n\n`;
+      
+      const entries = Object.entries(balance)
+        .filter(([_, value]) => (value as number) > 0)
+        .sort((a, b) => (b[1] as number) - (a[1] as number));
+
+      let totalUsd = 0;
+      for (const [asset, amount] of entries) {
+        const value = amount as number;
+        if (asset === "USDT" || asset === "USDC") {
+          totalUsd += value;
+          balanceMsg += `💵 *${asset}:* \`${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\`\n`;
+        } else {
+          balanceMsg += `🪙 *${asset}:* \`${value.toFixed(6)}\`\n`;
+        }
+      }
+      
+      balanceMsg += `\n💵 *Всего USDT:* \`${totalUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\``;
+
+      addMessage({
+        role: "bot",
+        content: balanceMsg,
+        type: "notification",
+      });
+    } catch {
+      addMessage({
+        role: "system",
+        content: "❌ Failed to get balance",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Close specific position
+  const handleClosePosition = async (positionId: string, symbol: string, direction: string) => {
+    if (isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/trade/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionId }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        const pnl = data.pnl?.value || 0;
+        const pnlSign = pnl >= 0 ? "+" : "";
+        const pnlEmoji = pnl >= 0 ? "🟢" : "🔴";
+        
+        addMessage({
+          role: "bot",
+          content: `✅ **Позиция закрыта**\n\n${symbol} ${direction}\n${pnlEmoji} PnL: ${pnlSign}$${pnl.toFixed(2)}`,
+          type: "notification",
+        });
+        
+        // Dispatch event to update positions
+        window.dispatchEvent(new Event("position-opened"));
+      } else {
+        addMessage({
+          role: "system",
+          content: `❌ ${data.error || "Failed to close position"}`,
+          type: "error",
+        });
+      }
+    } catch {
+      addMessage({
+        role: "system",
+        content: "❌ Failed to close position",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Edit SL/TP
+  const handleEditSLTP = async (positionId: string, type: "SL" | "TP", value: number, symbol: string) => {
+    if (isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const response = await fetch("/api/trade/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionId, type: type.toLowerCase(), value }),
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        addMessage({
+          role: "bot",
+          content: `✅ **${type} обновлён**\n\n${symbol}\nНовый ${type}: $${value.toLocaleString()}`,
+          type: "notification",
+        });
+      } else {
+        addMessage({
+          role: "system",
+          content: `❌ ${data.error || "Failed to update"}`,
+          type: "error",
+        });
+      }
+    } catch {
+      addMessage({
+        role: "system",
+        content: "❌ Failed to update",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get position details
+  const handlePositionDetails = async (positionId: string) => {
+    if (isLoading) return;
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`/api/trade/position/${positionId}`);
+      const data = await response.json();
+
+      if (data.success && data.position) {
+        const pos = data.position;
+        const dirEmoji = pos.direction === "LONG" ? "🟢" : "🔴";
+        
+        let details = `${dirEmoji} **${pos.symbol}** ${pos.direction}\n\n`;
+        details += `📊 **Детали позиции:**\n`;
+        details += `• Размер: \`${pos.totalAmount?.toFixed(6) || 'N/A'}\`\n`;
+        details += `• Вход: \`$${pos.avgEntryPrice?.toLocaleString() || 'N/A'}\`\n`;
+        details += `• Плечо: \`${pos.leverage || 1}x\`\n`;
+        
+        if (pos.stopLoss) {
+          const slPercent = Math.abs((pos.stopLoss - pos.avgEntryPrice) / pos.avgEntryPrice * 100);
+          details += `• Stop Loss: \`$${pos.stopLoss.toLocaleString()}\` (${slPercent.toFixed(2)}%)\n`;
+        }
+        
+        if (pos.takeProfit) {
+          const tpPercent = Math.abs((pos.takeProfit - pos.avgEntryPrice) / pos.avgEntryPrice * 100);
+          details += `• Take Profit: \`$${pos.takeProfit.toLocaleString()}\` (${tpPercent.toFixed(2)}%)\n`;
+        }
+        
+        if (pos.unrealizedPnl !== undefined) {
+          const pnlSign = pos.unrealizedPnl >= 0 ? "+" : "";
+          const pnlEmoji = pos.unrealizedPnl >= 0 ? "📈" : "📉";
+          details += `\n${pnlEmoji} PnL: ${pnlSign}$${pos.unrealizedPnl.toFixed(2)}`;
+
+          addMessage({
+            role: "bot",
+            content: details,
+            type: "notification",
+            data: pos,
+          });
+        }
+      }
+    } catch {
+      addMessage({
+        role: "system",
+        content: "❌ Failed to get details",
+        type: "error",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
   };
@@ -306,6 +496,9 @@ export function ChatBot() {
   const renderMessageContent = (message: Message) => {
     const signal = message.type === "signal" && message.data ? 
       (message.data as ParsedSignal) : null;
+    
+    // Check if this is a position (has positionId)
+    const isPosition = signal?.positionId || signal?.id;
 
     return (
       <>
@@ -335,27 +528,70 @@ export function ChatBot() {
                 {signal.leverage}x
               </Badge>
             </div>
+            
+            {/* Inline buttons - like Telegram */}
             <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                className="flex-1 h-8"
-                onClick={() => handleExecuteSignal(signal)}
-                disabled={isLoading}
-              >
-                <Zap className="h-3 w-3 mr-1" />
-                Execute
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8"
-                onClick={() => {
-                  navigator.clipboard.writeText(JSON.stringify(signal, null, 2));
-                  toast.success("Copied");
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
+              {isPosition ? (
+                // Position management buttons (like Telegram inline keyboards)
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-8"
+                    onClick={() => handlePositionDetails(signal.positionId || signal.id || '')}
+                    disabled={isLoading}
+                  >
+                    <Info className="h-3 w-3 mr-1" />
+                    Details
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 h-8"
+                    onClick={() => {
+                      const newSL = prompt("Enter new Stop Loss:");
+                      if (newSL) handleEditSLTP(signal.positionId || signal.id || '', "SL", parseFloat(newSL), signal.symbol);
+                    }}
+                    disabled={isLoading}
+                  >
+                    <Edit3 className="h-3 w-3 mr-1" />
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-red-500 hover:bg-red-500/10"
+                    onClick={() => handleClosePosition(signal.positionId || signal.id || '', signal.symbol, signal.direction)}
+                    disabled={isLoading}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </>
+              ) : (
+                // Signal execution buttons
+                <>
+                  <Button
+                    size="sm"
+                    className="flex-1 h-8"
+                    onClick={() => handleExecuteSignal(signal)}
+                    disabled={isLoading}
+                  >
+                    <Zap className="h-3 w-3 mr-1" />
+                    Execute
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => {
+                      navigator.clipboard.writeText(JSON.stringify(signal, null, 2));
+                      toast.success("Copied");
+                    }}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -523,6 +759,15 @@ export function ChatBot() {
             </Button>
             <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setInput("positions")}>
               📊 positions
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs px-2 text-green-500"
+              onClick={handleBalance}
+              disabled={isLoading}
+            >
+              💰 balance
             </Button>
             <Button
               variant="ghost"

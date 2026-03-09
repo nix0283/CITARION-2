@@ -47,7 +47,7 @@ export interface TrailingConfig {
   entry?: { type: "percentage" | "price"; value: number };
   takeProfit?: { type: "percentage" | "price"; value: number };
   stop?: {
-    type: "moving_target" | "breakeven";
+    type: "moving_target" | "moving_2_target" | "breakeven" | "percent_below_trigger" | "percent_below_highest";
     trigger?: { type: "target" | "percent"; value: number };
   };
 }
@@ -491,6 +491,136 @@ export function parseStopLoss(text: string): number | undefined {
   return undefined;
 }
 
+// ==================== TRAILING CONFIGURATION PARSING ====================
+
+/**
+ * Parse trailing configuration from Cornix-style signal text
+ * 
+ * Cornix Format:
+ * ```
+ * Trailing Configuration:
+ * Entry: Percentage (0.5%)
+ * Take-Profit: Percentage (0.5%)
+ * Stop: Moving Target - Trigger: Target (1)
+ * ```
+ * 
+ * Or:
+ * ```
+ * Stop: Breakeven - Trigger: Percent (1%)
+ * Stop: Moving 2-Target - Trigger: Target (2)
+ * Stop: Percent Below Trigger - Trigger: Target (1) - Percent (2%)
+ * Stop: Percent Below Highest - Trigger: Percent (1%)
+ * ```
+ */
+export function parseTrailingConfig(text: string): TrailingConfig | undefined {
+  const config: TrailingConfig = {};
+  const cleanText = text.replace(/[\r\n]+/g, " ");
+
+  // Check for "Trailing Configuration:" section
+  const trailingSectionMatch = cleanText.match(/Trailing\s*Configuration\s*:?\s*([\s\S]*?)(?=(?:Exchanges|Signal Type|Leverage|Entry|Take-Profit|Stop Targets|$))/i);
+  const trailingText = trailingSectionMatch ? trailingSectionMatch[1] : cleanText;
+
+  // Parse Entry trailing
+  const entryMatch = trailingText.match(/Entry\s*:\s*(Percentage|Price)\s*\(\s*([\d.]+)\s*%?\s*\)/i);
+  if (entryMatch) {
+    config.entry = {
+      type: entryMatch[1].toLowerCase() as "percentage" | "price",
+      value: parseFloat(entryMatch[2]),
+    };
+  }
+
+  // Parse Take-Profit trailing
+  const tpMatch = trailingText.match(/Take-Profit\s*:\s*(Percentage|Price)\s*\(\s*([\d.]+)\s*%?\s*\)/i);
+  if (tpMatch) {
+    config.takeProfit = {
+      type: tpMatch[1].toLowerCase() as "percentage" | "price",
+      value: parseFloat(tpMatch[2]),
+    };
+  }
+
+  // Parse Stop trailing - 5 types
+  // Type 1: Breakeven
+  const breakevenMatch = trailingText.match(/Stop\s*:\s*Breakeven\s*(?:-\s*Trigger\s*:\s*(Target|Percent)\s*\(\s*(\d+)\s*%?\s*\))?/i);
+  if (breakevenMatch) {
+    config.stop = {
+      type: "breakeven",
+      trigger: breakevenMatch[1] ? {
+        type: breakevenMatch[1].toLowerCase() as "target" | "percent",
+        value: parseFloat(breakevenMatch[2]),
+      } : { type: "target", value: 1 },
+    };
+  }
+
+  // Type 2: Moving Target
+  const movingTargetMatch = trailingText.match(/Stop\s*:\s*Moving\s+Target\s*(?:-\s*Trigger\s*:\s*(Target|Percent)\s*\(\s*(\d+)\s*%?\s*\))?/i);
+  if (movingTargetMatch) {
+    config.stop = {
+      type: "moving_target",
+      trigger: movingTargetMatch[1] ? {
+        type: movingTargetMatch[1].toLowerCase() as "target" | "percent",
+        value: parseFloat(movingTargetMatch[2]),
+      } : { type: "target", value: 1 },
+    };
+  }
+
+  // Type 3: Moving 2-Target
+  const moving2TargetMatch = trailingText.match(/Stop\s*:\s*Moving\s+2-?Target\s*(?:-\s*Trigger\s*:\s*(Target|Percent)\s*\(\s*(\d+)\s*%?\s*\))?/i);
+  if (moving2TargetMatch) {
+    config.stop = {
+      type: "moving_2_target",
+      trigger: moving2TargetMatch[1] ? {
+        type: moving2TargetMatch[1].toLowerCase() as "target" | "percent",
+        value: parseFloat(moving2TargetMatch[2]),
+      } : { type: "target", value: 2 },
+    };
+  }
+
+  // Type 4: Percent Below Trigger
+  const percentBelowTriggerMatch = trailingText.match(/Stop\s*:\s*Percent\s+Below\s+Trigger\s*(?:-\s*Trigger\s*:\s*(Target|Percent)\s*\(\s*(\d+)\s*%?\s*\))?\s*(?:-\s*Percent\s*\(\s*([\d.]+)\s*%\s*\))?/i);
+  if (percentBelowTriggerMatch) {
+    config.stop = {
+      type: "percent_below_trigger",
+      trigger: percentBelowTriggerMatch[1] ? {
+        type: percentBelowTriggerMatch[1].toLowerCase() as "target" | "percent",
+        value: parseFloat(percentBelowTriggerMatch[2]),
+      } : { type: "target", value: 1 },
+    };
+    // Store the trailing percent in entry if needed (for compatibility)
+    if (percentBelowTriggerMatch[3]) {
+      config.entry = {
+        type: "percentage",
+        value: parseFloat(percentBelowTriggerMatch[3]),
+      };
+    }
+  }
+
+  // Type 5: Percent Below Highest
+  const percentBelowHighestMatch = trailingText.match(/Stop\s*:\s*Percent\s+Below\s+Highest\s*(?:-\s*Trigger\s*:\s*(Target|Percent)\s*\(\s*(\d+)\s*%?\s*\))?\s*(?:-\s*Percent\s*\(\s*([\d.]+)\s*%\s*\))?/i);
+  if (percentBelowHighestMatch) {
+    config.stop = {
+      type: "percent_below_highest",
+      trigger: percentBelowHighestMatch[1] ? {
+        type: percentBelowHighestMatch[1].toLowerCase() as "target" | "percent",
+        value: parseFloat(percentBelowHighestMatch[2]),
+      } : undefined,
+    };
+    // Store the trailing percent
+    if (percentBelowHighestMatch[3]) {
+      config.entry = {
+        type: "percentage",
+        value: parseFloat(percentBelowHighestMatch[3]),
+      };
+    }
+  }
+
+  // Return config only if we found something
+  if (config.entry || config.takeProfit || config.stop) {
+    return config;
+  }
+
+  return undefined;
+}
+
 // ==================== AMOUNT PARSING ====================
 
 /**
@@ -615,6 +745,9 @@ export function parseSignal(text: string): ParsedSignal | null {
     // Parse signal type
     const signalType = parseSignalType(cleanText);
 
+    // Parse trailing configuration (Cornix-compatible)
+    const trailingConfig = parseTrailingConfig(cleanText);
+
     // Check for close signal
     const isClose = containsKeyword(cleanText, KEYWORDS.CLOSE);
 
@@ -625,6 +758,7 @@ export function parseSignal(text: string): ParsedSignal | null {
     if (stopLoss) confidence += 0.1;
     if (takeProfits.length > 0) confidence += 0.1;
     if (explicitDirection) confidence += 0.1;
+    if (trailingConfig) confidence += 0.05; // Boost confidence for trailing config
 
     return {
       symbol: coinPair.symbol,
@@ -640,6 +774,7 @@ export function parseSignal(text: string): ParsedSignal | null {
       leverage,
       leverageType,
       signalType,
+      trailingConfig,
       amountPerTrade,
       riskPercentage,
       exchanges,

@@ -96,8 +96,8 @@ interface BotConfigData {
   dcaPriceScale: number;
   dcaMaxPriceDiff: number;
   
-  // Take-Profit
-  tpStrategy: "ONE_TARGET" | "MULTIPLE_TARGETS" | "ALL_TARGETS";
+  // Take-Profit (9 Cornix-compatible strategies)
+  tpStrategy: "EVENLY_DIVIDED" | "ONE_TARGET" | "TWO_TARGETS" | "THREE_TARGETS" | "FIFTY_ON_FIRST" | "DECREASING_EXP" | "INCREASING_EXP" | "SKIP_FIRST" | "CUSTOM_RATIOS";
   tpTargetCount: number;
   tpCustomRatios: number[];
   
@@ -164,8 +164,8 @@ const DEFAULT_CONFIG: BotConfigData = {
   dcaPriceScale: 1,
   dcaMaxPriceDiff: 10,
   
-  tpStrategy: "ONE_TARGET",
-  tpTargetCount: 1,
+  tpStrategy: "EVENLY_DIVIDED",
+  tpTargetCount: 3,
   tpCustomRatios: [],
   
   // Take Profit Grace (Cornix-compatible)
@@ -964,39 +964,296 @@ export function BotConfigForm() {
 
               <Separator />
 
-              {/* Take-Profit Strategy */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Take-Profit Strategy</Label>
-                <p className="text-xs text-muted-foreground">
-                  Стратегия фиксации прибыли
-                </p>
-                <Select
-                  value={config.tpStrategy}
-                  onValueChange={(v) => updateConfig("tpStrategy", v as BotConfigData["tpStrategy"])}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ONE_TARGET">One Target (Весь объем сразу)</SelectItem>
-                    <SelectItem value="MULTIPLE_TARGETS">Multiple Targets (Частями)</SelectItem>
-                    <SelectItem value="ALL_TARGETS">All Targets (По всем целям)</SelectItem>
-                  </SelectContent>
-                </Select>
-                
-                {config.tpStrategy === "MULTIPLE_TARGETS" && (
-                  <div className="flex items-center gap-2 mt-2">
-                    <Label className="text-xs">Кол-во целей:</Label>
-                    <Input
-                      type="number"
-                      value={config.tpTargetCount}
-                      onChange={(e) => updateConfig("tpTargetCount", parseInt(e.target.value))}
-                      className="w-20"
-                      min={1}
+              {/* Take-Profit Strategy - 9 Cornix-compatible strategies */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium">Take-Profit Strategy</Label>
+                    <p className="text-xs text-muted-foreground">
+                      9 стратегий распределения прибыли (Cornix)
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    {config.tpTargetCount} TP
+                  </Badge>
+                </div>
+
+                {/* Number of TP targets */}
+                <div className="space-y-2">
+                  <Label className="text-xs">Количество TP целей</Label>
+                  <div className="flex items-center gap-4">
+                    <Slider
+                      value={[config.tpTargetCount]}
+                      onValueChange={([v]) => updateConfig("tpTargetCount", v)}
                       max={10}
+                      min={1}
+                      step={1}
+                      className="flex-1"
                     />
+                    <span className="text-sm font-mono w-8 text-right">{config.tpTargetCount}</span>
+                  </div>
+                </div>
+
+                {/* Strategy selection */}
+                <div className="grid grid-cols-1 gap-2">
+                  {/* EVENLY_DIVIDED */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "EVENLY_DIVIDED")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "EVENLY_DIVIDED"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">📊 Evenly Divided</p>
+                      <Badge variant="outline" className="text-xs">По умолчанию</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Поровну между всеми TP ({config.tpTargetCount > 0 ? (100/config.tpTargetCount).toFixed(1) : 0}% каждый)
+                    </p>
+                  </button>
+
+                  {/* ONE_TARGET */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "ONE_TARGET")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "ONE_TARGET"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">🎯 One Target</p>
+                      <Badge variant="outline" className="text-xs">100% на TP1</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Весь объем закрывается на первом TP
+                    </p>
+                  </button>
+
+                  {/* TWO_TARGETS */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "TWO_TARGETS")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "TWO_TARGETS"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">2️⃣ Two Targets</p>
+                      <Badge variant="outline" className="text-xs">50%/50%</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Два равных входа (игнорирует кол-во TP)
+                    </p>
+                  </button>
+
+                  {/* THREE_TARGETS */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "THREE_TARGETS")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "THREE_TARGETS"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">3️⃣ Three Targets</p>
+                      <Badge variant="outline" className="text-xs">33.33% каждый</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Три равных входа (игнорирует кол-во TP)
+                    </p>
+                  </button>
+
+                  {/* FIFTY_ON_FIRST */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "FIFTY_ON_FIRST")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "FIFTY_ON_FIRST"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">⭐ 50% On First</p>
+                      <Badge variant="outline" className="text-xs">50% + поровну</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      50% на первом TP, остальное поровну между остальными
+                    </p>
+                  </button>
+
+                  {/* DECREASING_EXP */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "DECREASING_EXP")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "DECREASING_EXP"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">📉 Decreasing Exponential</p>
+                      <Badge variant="outline" className="text-xs">53%→27%→13%→7%</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Экспоненциальное уменьшение: первый TP самый большой
+                    </p>
+                  </button>
+
+                  {/* INCREASING_EXP */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "INCREASING_EXP")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "INCREASING_EXP"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">📈 Increasing Exponential</p>
+                      <Badge variant="outline" className="text-xs">7%→13%→27%→53%</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Экспоненциальное увеличение: последний TP самый большой
+                    </p>
+                  </button>
+
+                  {/* SKIP_FIRST */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "SKIP_FIRST")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "SKIP_FIRST"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">⏭️ Skip First</p>
+                      <Badge variant="outline" className="text-xs">0% на TP1</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Первый TP пропускается (0%), остальное поровну
+                    </p>
+                  </button>
+
+                  {/* CUSTOM_RATIOS */}
+                  <button
+                    type="button"
+                    onClick={() => updateConfig("tpStrategy", "CUSTOM_RATIOS")}
+                    className={cn(
+                      "p-3 rounded-lg border text-left transition-colors",
+                      config.tpStrategy === "CUSTOM_RATIOS"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:bg-secondary/50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium text-sm">⚙️ Custom Ratios</p>
+                      <Badge variant="outline" className="text-xs">Свои %</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Настроить свои проценты для каждого TP
+                    </p>
+                  </button>
+                </div>
+
+                {/* Custom ratios input */}
+                {config.tpStrategy === "CUSTOM_RATIOS" && (
+                  <div className="p-3 rounded-lg bg-secondary/50 space-y-2">
+                    <Label className="text-xs">Проценты для каждого TP (сумма = 100%)</Label>
+                    <Input
+                      placeholder="Например: 20, 30, 50"
+                      value={config.tpCustomRatios.join(", ")}
+                      onChange={(e) => {
+                        const values = e.target.value.split(",").map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+                        updateConfig("tpCustomRatios", values);
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Введите через запятую: 20, 30, 50 = 20% на TP1, 30% на TP2, 50% на TP3
+                    </p>
                   </div>
                 )}
+
+                {/* TP Preview */}
+                <div className="mt-2 p-3 rounded-lg bg-muted/50 border">
+                  <p className="text-xs font-medium mb-2">Предпросмотр распределения:</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {(() => {
+                      const n = config.tpTargetCount;
+                      let ratios: number[] = [];
+                      
+                      switch(config.tpStrategy) {
+                        case "ONE_TARGET":
+                          ratios = [100];
+                          break;
+                        case "TWO_TARGETS":
+                          ratios = [50, 50];
+                          break;
+                        case "THREE_TARGETS":
+                          ratios = [33.33, 33.33, 33.34];
+                          break;
+                        case "FIFTY_ON_FIRST":
+                          const rest = n > 1 ? 50 / (n - 1) : 0;
+                          ratios = [50, ...Array(n - 1).fill(rest)];
+                          break;
+                        case "DECREASING_EXP":
+                          let remaining = 100;
+                          for (let i = 0; i < n; i++) {
+                            const w = i < n - 1 ? remaining / 2 : remaining;
+                            ratios.push(w);
+                            remaining -= w;
+                          }
+                          break;
+                        case "INCREASING_EXP":
+                          const weights: number[] = [];
+                          let sum = 0;
+                          for (let i = 0; i < n; i++) {
+                            const w = Math.pow(2, i);
+                            weights.push(w);
+                            sum += w;
+                          }
+                          ratios = weights.map(w => (w / sum) * 100);
+                          break;
+                        case "SKIP_FIRST":
+                          const skipRest = n > 1 ? 100 / (n - 1) : 100;
+                          ratios = [0, ...Array(n - 1).fill(skipRest)];
+                          break;
+                        case "CUSTOM_RATIOS":
+                          ratios = config.tpCustomRatios.length > 0 
+                            ? [...config.tpCustomRatios] 
+                            : Array(n).fill(100/n);
+                          break;
+                        default: // EVENLY_DIVIDED
+                          ratios = Array(n).fill(100/n);
+                      }
+                      
+                      return ratios.slice(0, n).map((r, i) => (
+                        <p key={i}>• TP{i + 1}: {r.toFixed(1)}%</p>
+                      ));
+                    })()}
+                  </div>
+                </div>
               </div>
 
               <Separator />
