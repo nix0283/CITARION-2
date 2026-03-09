@@ -540,94 +540,145 @@ export function PriceChart() {
     };
   }, [symbol, timeframe]);
 
+  // Ref to track last update time for throttling
+  const lastUpdateRef = useRef<number>(0);
+  const lastPriceRef = useRef<number>(0);
+  const candlesRef = useRef<ChartCandle[]>(candles);
+
+  // Keep candlesRef in sync
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
+
   // Real-time price updates from existing WebSocket connection (PriceProvider)
   useEffect(() => {
-    if (isLoading || !symbol || candles.length === 0) return;
+    if (isLoading || !symbol || !candleSeriesRef.current) return;
 
     // Get the current symbol's price from WebSocket
     const priceData = prices[symbol];
     if (!priceData || !isRealtimeConnected) return;
 
-    // Update current price from WebSocket
-    setCurrentPrice(priceData.price);
+    const newPrice = priceData.price;
 
-    // Update the last candle in real-time using WebSocket price
+    // Throttle updates to max 10 per second (100ms)
+    const now = Date.now();
+    if (now - lastUpdateRef.current < 100) return;
+
+    // Skip if price hasn't changed significantly (avoid floating point noise)
+    if (Math.abs(newPrice - lastPriceRef.current) < 0.0001) return;
+
+    // Need candles to update
+    const currentCandles = candlesRef.current;
+    if (currentCandles.length === 0) return;
+
+    lastUpdateRef.current = now;
+    lastPriceRef.current = newPrice;
+
+    // Update current price from WebSocket
+    setCurrentPrice(newPrice);
+
+    // Update the last candle directly in the chart series using update()
+    // This is much more efficient than setData() for real-time updates
+    const lastCandle = currentCandles[currentCandles.length - 1];
+    const updatedCandle: CandlestickData = {
+      time: lastCandle.time as Time,
+      open: lastCandle.open,
+      high: Math.max(lastCandle.high, newPrice),
+      low: Math.min(lastCandle.low, newPrice),
+      close: newPrice,
+    };
+
+    // Use update() instead of setData() for efficient real-time updates
+    try {
+      candleSeriesRef.current.update(updatedCandle);
+    } catch (e) {
+      // Ignore update errors (can happen with out-of-order data)
+    }
+
+    // Update internal candles state (for other calculations)
     setCandles((prevCandles) => {
       if (prevCandles.length === 0) return prevCandles;
-
-      const lastCandle = prevCandles[prevCandles.length - 1];
-      const newPrice = priceData.price;
-
-      // Update the last candle with new price data
-      // The high/low may need to be adjusted based on the new price
-      const updated = [...prevCandles];
-      updated[updated.length - 1] = {
-        ...lastCandle,
-        close: newPrice,
-        high: Math.max(lastCandle.high, newPrice),
-        low: Math.min(lastCandle.low, newPrice),
-      };
-      return updated;
+      const last = prevCandles[prevCandles.length - 1];
+      return [
+        ...prevCandles.slice(0, -1),
+        { ...last, close: newPrice, high: Math.max(last.high, newPrice), low: Math.min(last.low, newPrice) }
+      ];
     });
 
     // Recalculate price change
-    if (candles.length > 0) {
-      const firstOpen = candles[0].open;
+    if (currentCandles.length > 0) {
+      const firstOpen = currentCandles[0].open;
       if (firstOpen > 0) {
-        setPriceChange(((priceData.price - firstOpen) / firstOpen) * 100);
+        setPriceChange(((newPrice - firstOpen) / firstOpen) * 100);
       }
     }
-  }, [prices, symbol, isLoading, candles.length, isRealtimeConnected]);
+  }, [prices, symbol, isLoading, isRealtimeConnected]);
 
-  // Update chart data
+  // Ref to track if initial data was loaded
+  const initialDataLoadedRef = useRef(false);
+  const prevSymbolRef = useRef(symbol);
+  const prevTimeframeRef = useRef(timeframe);
+
+  // Update chart data - ONLY for initial load or symbol/timeframe change
   useEffect(() => {
     if (!chartRef.current || !isChartReady || candles.length === 0) return;
 
-    const candleData = toCandlestickData(candles);
-    const volumeData = toVolumeData(candles);
-    
-    if (candleData.length === 0) return;
+    // Check if symbol or timeframe changed - need full reload
+    const symbolChanged = prevSymbolRef.current !== symbol;
+    const timeframeChanged = prevTimeframeRef.current !== timeframe;
 
-    // Update candlestick data
-    if (candleSeriesRef.current) {
-      try {
-        candleSeriesRef.current.setData(candleData);
-        
-        // CIT-044: Set order markers on candlestick series
-        if (showOrderMarkers && processedMarkers.length > 0 && 'setMarkers' in candleSeriesRef.current) {
-          (candleSeriesRef.current as any).setMarkers(processedMarkers.map(m => ({
-            time: m.time,
-            position: m.position,
-            color: m.color,
-            shape: m.shape,
-            text: m.text,
-          })));
+    // Only do full setData on initial load or symbol/timeframe change
+    if (!initialDataLoadedRef.current || symbolChanged || timeframeChanged) {
+      initialDataLoadedRef.current = true;
+      prevSymbolRef.current = symbol;
+      prevTimeframeRef.current = timeframe;
+
+      const candleData = toCandlestickData(candles);
+      const volumeData = toVolumeData(candles);
+
+      if (candleData.length === 0) return;
+
+      // Update candlestick data
+      if (candleSeriesRef.current) {
+        try {
+          candleSeriesRef.current.setData(candleData);
+
+          // CIT-044: Set order markers on candlestick series
+          if (showOrderMarkers && processedMarkers.length > 0 && 'setMarkers' in candleSeriesRef.current) {
+            (candleSeriesRef.current as any).setMarkers(processedMarkers.map(m => ({
+              time: m.time,
+              position: m.position,
+              color: m.color,
+              shape: m.shape,
+              text: m.text,
+            })));
+          }
+        } catch (e) {
+          console.error('Error setting candlestick data:', e);
         }
+      }
+
+      // Update volume data
+      if (volumeSeriesRef.current) {
+        try {
+          if (showVolume) {
+            volumeSeriesRef.current.setData(volumeData);
+          } else {
+            volumeSeriesRef.current.setData([]);
+          }
+        } catch (e) {
+          console.error('Error setting volume data:', e);
+        }
+      }
+
+      // Fit content
+      try {
+        chartRef.current.timeScale().fitContent();
       } catch (e) {
-        console.error('Error setting candlestick data:', e);
+        console.error('Error fitting content:', e);
       }
     }
-
-    // Update volume data
-    if (volumeSeriesRef.current) {
-      try {
-        if (showVolume) {
-          volumeSeriesRef.current.setData(volumeData);
-        } else {
-          volumeSeriesRef.current.setData([]);
-        }
-      } catch (e) {
-        console.error('Error setting volume data:', e);
-      }
-    }
-
-    // Fit content
-    try {
-      chartRef.current.timeScale().fitContent();
-    } catch (e) {
-      console.error('Error fitting content:', e);
-    }
-  }, [candles, showVolume, isChartReady, processedMarkers, showOrderMarkers]);
+  }, [candles.length, showVolume, isChartReady, processedMarkers, showOrderMarkers, symbol, timeframe]);
 
   // Render overlay indicators on main chart (pane 0)
   useEffect(() => {
