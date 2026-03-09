@@ -626,7 +626,7 @@ export function StrategyLab() {
         </Select>
       </div>
 
-      <Accordion type="multiple" className="w-full" defaultValue={["entry", "tp", "sl"]}>
+      <Accordion type="multiple" className="w-full" defaultValue={[]}>
         {/* Entry Tactics */}
         <AccordionItem value="entry">
           <AccordionTrigger className="hover:no-underline">

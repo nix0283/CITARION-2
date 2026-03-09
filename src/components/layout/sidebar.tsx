@@ -173,7 +173,6 @@ const mainMenuItems: MenuItem[] = [
 
 const otherMenuItems: MenuItem[] = [
   { id: "auto-trading-settings", label: "Настройки автоторговли", icon: Settings },
-  { id: "multi-chart", label: "Мульти-график", icon: Grid3X3 },
   { id: "trading", label: "Торговля", icon: LineChart },
   { id: "strategy-lab", label: "Лаборатория", icon: FlaskConical },
   { id: "hyperopt", label: "Гипероптим", icon: Sparkles },
@@ -203,15 +202,15 @@ export function Sidebar() {
   const { activeTab, setActiveTab, sidebarOpen, setSidebarOpen, account } = useCryptoStore();
   const isDemo = account?.accountType === "DEMO";
   
-  // Bots section expansion state
-  const [botsExpanded, setBotsExpanded] = useState(true)
+  // Bots section expansion state (collapsed by default)
+  const [botsExpanded, setBotsExpanded] = useState(false)
   
-  // Copy Trading section expansion state
-  const [copyTradingExpanded, setCopyTradingExpanded] = useState(true)
+  // Copy Trading section expansion state (collapsed by default)
+  const [copyTradingExpanded, setCopyTradingExpanded] = useState(false)
   
-  // Category expansion states (all expanded by default)
+  // Category expansion states (all collapsed by default)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
-    new Set(['meta', 'operational', 'institutional', 'analytical', 'frequency'])
+    new Set([]) // Empty = all collapsed by default
   );
 
   // Mobile detection

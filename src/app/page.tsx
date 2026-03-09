@@ -14,8 +14,7 @@ import { cn } from "@/lib/utils";
 
 // Functional Components
 import { BotConfigForm } from "@/components/bot/bot-config-form";
-import { MultiChartPanel } from "@/components/chart/multi-chart-panel";
-import { MiniChart } from "@/components/chart/mini-chart";
+
 import { TradingForm } from "@/components/trading/trading-form";
 import { StrategyLab } from "@/components/strategy-lab/strategy-lab";
 import { HyperoptPanel } from "@/components/hyperopt/hyperopt-panel";
@@ -325,19 +324,7 @@ function DashboardContent() {
       // Advanced Menu Items - Using Real Functional Components
       case "auto-trading-settings":
         return <BotConfigForm />;
-      case "multi-chart":
-        return (
-          <MultiChartPanel
-            renderChart={(symbol, timeframe, chartId) => (
-              <MiniChart
-                key={chartId}
-                symbol={symbol}
-                timeframe={timeframe}
-                chartId={chartId}
-              />
-            )}
-          />
-        );
+
       case "trading":
         return <TradingForm />;
       case "strategy-lab":

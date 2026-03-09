@@ -298,7 +298,7 @@ export function BotConfigForm() {
         </div>
       </div>
 
-      <Accordion type="multiple" defaultValue={["general", "trailing", "strategies", "stoploss", "filters", "margin", "fees"]} className="space-y-4">
+      <Accordion type="multiple" defaultValue={[]} className="space-y-4">
         
         {/* ==================== GENERAL SETTINGS ==================== */}
         <AccordionItem value="general" className="border rounded-lg bg-card">
