@@ -544,13 +544,18 @@ export function PriceChart() {
   const lastUpdateRef = useRef<number>(0);
   const lastPriceRef = useRef<number>(0);
   const candlesRef = useRef<ChartCandle[]>(candles);
+  const firstOpenRef = useRef<number>(0);
 
-  // Keep candlesRef in sync
+  // Keep candlesRef and firstOpenRef in sync
   useEffect(() => {
     candlesRef.current = candles;
+    if (candles.length > 0) {
+      firstOpenRef.current = candles[0].open;
+    }
   }, [candles]);
 
   // Real-time price updates from existing WebSocket connection (PriceProvider)
+  // Uses update() for efficient single-candle updates without full re-render
   useEffect(() => {
     if (isLoading || !symbol || !candleSeriesRef.current) return;
 
@@ -560,12 +565,14 @@ export function PriceChart() {
 
     const newPrice = priceData.price;
 
-    // Throttle updates to max 10 per second (100ms)
+    // Throttle updates to max 4 per second (250ms) for smoother UX
     const now = Date.now();
-    if (now - lastUpdateRef.current < 100) return;
+    if (now - lastUpdateRef.current < 250) return;
 
-    // Skip if price hasn't changed significantly (avoid floating point noise)
-    if (Math.abs(newPrice - lastPriceRef.current) < 0.0001) return;
+    // Skip if price hasn't changed significantly
+    const priceDiff = Math.abs(newPrice - lastPriceRef.current);
+    const minDiff = newPrice > 100 ? 0.1 : newPrice > 10 ? 0.01 : 0.001;
+    if (priceDiff < minDiff) return;
 
     // Need candles to update
     const currentCandles = candlesRef.current;
@@ -574,11 +581,10 @@ export function PriceChart() {
     lastUpdateRef.current = now;
     lastPriceRef.current = newPrice;
 
-    // Update current price from WebSocket
+    // Update current price display
     setCurrentPrice(newPrice);
 
     // Update the last candle directly in the chart series using update()
-    // This is much more efficient than setData() for real-time updates
     const lastCandle = currentCandles[currentCandles.length - 1];
     const updatedCandle: CandlestickData = {
       time: lastCandle.time as Time,
@@ -588,29 +594,21 @@ export function PriceChart() {
       close: newPrice,
     };
 
-    // Use update() instead of setData() for efficient real-time updates
+    // Use update() for efficient real-time updates (no full re-render)
     try {
       candleSeriesRef.current.update(updatedCandle);
+      // Update ref for next comparison (don't trigger state update)
+      candlesRef.current = [
+        ...currentCandles.slice(0, -1),
+        { ...lastCandle, close: newPrice, high: Math.max(lastCandle.high, newPrice), low: Math.min(lastCandle.low, newPrice) }
+      ];
     } catch (e) {
-      // Ignore update errors (can happen with out-of-order data)
+      // Ignore update errors
     }
 
-    // Update internal candles state (for other calculations)
-    setCandles((prevCandles) => {
-      if (prevCandles.length === 0) return prevCandles;
-      const last = prevCandles[prevCandles.length - 1];
-      return [
-        ...prevCandles.slice(0, -1),
-        { ...last, close: newPrice, high: Math.max(last.high, newPrice), low: Math.min(last.low, newPrice) }
-      ];
-    });
-
-    // Recalculate price change
-    if (currentCandles.length > 0) {
-      const firstOpen = currentCandles[0].open;
-      if (firstOpen > 0) {
-        setPriceChange(((newPrice - firstOpen) / firstOpen) * 100);
-      }
+    // Update price change percentage
+    if (firstOpenRef.current > 0) {
+      setPriceChange(((newPrice - firstOpenRef.current) / firstOpenRef.current) * 100);
     }
   }, [prices, symbol, isLoading, isRealtimeConnected]);
 
