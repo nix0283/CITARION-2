@@ -41,7 +41,7 @@ interface IndicatorsPanelProps {
 export function IndicatorsPanel({ onIndicatorsChange }: IndicatorsPanelProps) {
   const [activeIndicators, setActiveIndicators] = useState<IndicatorConfig[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const categories = getIndicatorCategories().filter(cat => cat !== '');
 
   const addIndicator = (indicator: BuiltInIndicator) => {

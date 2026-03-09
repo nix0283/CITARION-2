@@ -687,7 +687,7 @@ export function AlertSystemPanel() {
               </div>
             </CardHeader>
             <CardContent>
-              <Accordion type="multiple" className="w-full">
+              <Accordion type="multiple" className="w-full" defaultValue={[]}>
                 {/* Price Alerts */}
                 <AccordionItem value="price">
                   <AccordionTrigger className="hover:no-underline">

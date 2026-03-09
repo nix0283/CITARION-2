@@ -25,7 +25,6 @@ import {
   Users,
   FlaskConical,
   FolderCode,
-  MonitorPlay,
   Sparkles,
   Brain,
   Minimize2,
@@ -186,7 +185,6 @@ const otherMenuItems: MenuItem[] = [
 ]
 
 const bottomMenuItems: MenuItem[] = [
-  { id: "preview", label: "Превью", icon: MonitorPlay },
   { id: "workspace", label: "Рабочая область", icon: FolderCode },
   { id: "notifications", label: "Уведомления", icon: Bell },
   { id: "telegram", label: "Telegram", icon: MessageSquare },

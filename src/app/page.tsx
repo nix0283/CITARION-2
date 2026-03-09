@@ -24,7 +24,6 @@ import { VolatilityPanel } from "@/components/volatility/volatility-panel";
 import { GeneticOptimizerPanel } from "@/components/self-learning/genetic-optimizer-panel";
 import { RiskDashboard } from "@/components/risk-management/risk-dashboard";
 import { ExchangesPage } from "@/components/exchanges/exchanges-page";
-import { PreviewPanel } from "@/components/preview/preview-panel";
 import { WorkspacePanel } from "@/components/workspace/workspace-panel";
 import { NotificationsPanel } from "@/components/notifications/notifications-panel";
 import { TelegramSettings } from "@/components/telegram/telegram-settings";
@@ -116,7 +115,6 @@ import {
   Gauge,
   Sigma,
   MessageSquare,
-  MonitorPlay,
   FolderCode,
   Copy,
   Crown,
@@ -346,8 +344,6 @@ function DashboardContent() {
       case "exchanges":
         return <ExchangesPage />;
       // Bottom Menu Items - Using Real Functional Components
-      case "preview":
-        return <PreviewPanel />;
       case "workspace":
         return <WorkspacePanel />;
       case "notifications":
@@ -2229,54 +2225,6 @@ function AutoTradingSettingsView() {
   );
 }
 
-function MultiChartView() {
-  return (
-    <div className="flex flex-col h-full gap-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Мульти-график</h2>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">2x2</Button>
-          <Button variant="outline" size="sm">3x3</Button>
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-4 flex-1">
-        <Card className="overflow-hidden">
-          <CardHeader className="p-2 pb-0">
-            <Badge variant="outline" className="w-fit text-xs">BTCUSDT</Badge>
-          </CardHeader>
-          <CardContent className="p-2 h-[calc(100%-40px)]">
-            <PriceChart />
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeader className="p-2 pb-0">
-            <Badge variant="outline" className="w-fit text-xs">ETHUSDT</Badge>
-          </CardHeader>
-          <CardContent className="p-2 h-[calc(100%-40px)]">
-            <PriceChart />
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeader className="p-2 pb-0">
-            <Badge variant="outline" className="w-fit text-xs">SOLUSDT</Badge>
-          </CardHeader>
-          <CardContent className="p-2 h-[calc(100%-40px)]">
-            <PriceChart />
-          </CardContent>
-        </Card>
-        <Card className="overflow-hidden">
-          <CardHeader className="p-2 pb-0">
-            <Badge variant="outline" className="w-fit text-xs">BNBUSDT</Badge>
-          </CardHeader>
-          <CardContent className="p-2 h-[calc(100%-40px)]">
-            <PriceChart />
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
 function TradingView() {
   return <PlaceholderView title="Торговля" icon={LineChart} description="Ручная торговля с графиками и ордерами" />;
 }
@@ -2422,10 +2370,6 @@ function ExchangesView() {
 // ============================================
 // Bottom Menu Views
 // ============================================
-
-function PreviewView() {
-  return <PlaceholderView title="Превью" icon={MonitorPlay} description="Предпросмотр торговых сценариев" />;
-}
 
 function WorkspaceView() {
   return <PlaceholderView title="Рабочая область" icon={FolderCode} description="Управление рабочим пространством" />;
