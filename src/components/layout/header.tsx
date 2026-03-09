@@ -14,24 +14,101 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Moon, Sun, User, LogOut, RefreshCw, Bell, Wallet, ChevronDown } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Moon, Sun, User, LogOut, RefreshCw, Bell, Wallet, ChevronDown, AlertTriangle, TestTube, FlaskConical, Zap } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { formatNumber } from "@/lib/format";
 import { useState, useEffect } from "react";
 
+// Extended trading mode type for UI
+type ExtendedTradingMode = "PAPER" | "TESTNET" | "DEMO" | "LIVE";
+
+// Mode configuration
+const MODE_CONFIG: Record<ExtendedTradingMode, {
+  label: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  icon: typeof TestTube;
+  description: string;
+  requiresApiKey: boolean;
+}> = {
+  PAPER: {
+    label: "PAPER",
+    color: "text-blue-500",
+    bgColor: "bg-blue-500/10",
+    borderColor: "border-blue-500/20",
+    icon: FlaskConical,
+    description: "Симуляция с реальными ценами",
+    requiresApiKey: false,
+  },
+  TESTNET: {
+    label: "TESTNET",
+    color: "text-yellow-500",
+    bgColor: "bg-yellow-500/10",
+    borderColor: "border-yellow-500/20",
+    icon: TestTube,
+    description: "Тестовая сеть биржи",
+    requiresApiKey: true,
+  },
+  DEMO: {
+    label: "DEMO",
+    color: "text-purple-500",
+    bgColor: "bg-purple-500/10",
+    borderColor: "border-purple-500/20",
+    icon: Zap,
+    description: "Демо режим на live бирже",
+    requiresApiKey: true,
+  },
+  LIVE: {
+    label: "LIVE",
+    color: "text-red-500",
+    bgColor: "bg-red-500/10",
+    borderColor: "border-red-500/20",
+    icon: AlertTriangle,
+    description: "⚠️ Реальная торговля",
+    requiresApiKey: true,
+  },
+};
+
 export function Header() {
   const { account, setTradingMode, resetDemoBalance, setActiveTab } = useCryptoStore();
   const { theme, setTheme } = useTheme();
   
-  const isDemo = account?.accountType === "DEMO";
+  // Get current mode from account type or default to PAPER
+  const getCurrentMode = (): ExtendedTradingMode => {
+    const accountType = account?.accountType;
+    const isTestnet = account?.isTestnet;
+    
+    if (accountType === "REAL" && !isTestnet) return "LIVE";
+    if (accountType === "DEMO" && isTestnet) return "TESTNET";
+    if (accountType === "DEMO") return "DEMO";
+    return "PAPER";
+  };
+  
+  const currentMode = getCurrentMode();
+  const modeConfig = MODE_CONFIG[currentMode];
+  const ModeIcon = modeConfig.icon;
+  
   const balance = account?.virtualBalance?.USDT || 0;
   
   // Notification count state
   const [notificationCount] = useState(3);
 
-  const handleModeSwitch = (mode: TradingMode) => {
-    setTradingMode(mode);
+  const handleModeChange = (mode: ExtendedTradingMode) => {
+    // Map to store's TradingMode type
+    const storeMode: TradingMode = mode === "LIVE" ? "REAL" : "DEMO";
+    setTradingMode(storeMode);
+    
+    // Update account type based on mode
+    console.log(`[Header] Switching to ${mode} mode`);
   };
 
   const handleResetBalance = async () => {
@@ -54,7 +131,7 @@ export function Header() {
   return (
     <header className="sticky top-0 z-30 h-14 md:h-16 border-b border-border bg-card/80 backdrop-blur-sm">
       <div className="flex h-full items-center justify-between px-3 md:px-6">
-        {/* Left side - Page Title + Mobile Balance */}
+        {/* Left side - Page Title + Mode Badge */}
         <div className="flex items-center gap-2 md:gap-4">
           {/* Mobile spacing for menu button */}
           <div className="w-11 md:hidden" aria-hidden="true" />
@@ -62,14 +139,19 @@ export function Header() {
           <h2 className="text-sm md:text-lg font-semibold text-foreground truncate">
             Панель управления
           </h2>
+          
+          {/* Mode Badge - Compact on mobile */}
           <Badge
             variant="outline"
             className={cn(
-              "text-[10px] md:text-xs font-medium hidden sm:inline-flex",
-              isDemo ? "demo-badge" : "real-badge"
+              "text-[10px] md:text-xs font-medium",
+              modeConfig.bgColor,
+              modeConfig.color,
+              modeConfig.borderColor
             )}
           >
-            {isDemo ? "[DEMO]" : "[REAL]"}
+            <ModeIcon className="h-3 w-3 mr-1" />
+            [{modeConfig.label}]
           </Badge>
         </div>
 
@@ -83,8 +165,8 @@ export function Header() {
             </span>
           </div>
 
-          {/* Reset Balance (Demo only) - Hidden on mobile */}
-          {isDemo && (
+          {/* Reset Balance (Non-LIVE modes) - Hidden on mobile */}
+          {currentMode !== "LIVE" && (
             <Button
               variant="outline"
               size="sm"
@@ -96,34 +178,27 @@ export function Header() {
             </Button>
           )}
 
-          {/* Trading Mode Switch - Hidden on mobile */}
-          <div className="hidden sm:flex items-center gap-2 rounded-lg border border-border px-3 py-1.5">
-            <Label
-              htmlFor="mode-switch"
-              className={cn(
-                "text-xs font-medium cursor-pointer",
-                !isDemo ? "text-green-500" : "text-muted-foreground"
-              )}
-            >
-              REAL
-            </Label>
-            <Switch
-              id="mode-switch"
-              checked={isDemo}
-              onCheckedChange={(checked) =>
-                handleModeSwitch(checked ? "DEMO" : "REAL")
-              }
-              className="data-[state=checked]:bg-amber-500 data-[state=unchecked]:bg-green-500"
-            />
-            <Label
-              htmlFor="mode-switch"
-              className={cn(
-                "text-xs font-medium cursor-pointer",
-                isDemo ? "text-amber-500" : "text-muted-foreground"
-              )}
-            >
-              DEMO
-            </Label>
+          {/* Trading Mode Selector - Desktop */}
+          <div className="hidden sm:flex items-center gap-2 rounded-lg border border-border px-2 py-1">
+            <Label className="text-xs text-muted-foreground">Mode:</Label>
+            <Select value={currentMode} onValueChange={handleModeChange}>
+              <SelectTrigger className="h-7 w-[130px] border-0 bg-transparent text-xs font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(MODE_CONFIG).map(([mode, config]) => {
+                  const Icon = config.icon;
+                  return (
+                    <SelectItem key={mode} value={mode}>
+                      <div className="flex items-center gap-2">
+                        <Icon className={cn("h-3.5 w-3.5", config.color)} />
+                        <span className={config.color}>{config.label}</span>
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Notification Bell - Desktop */}
@@ -208,7 +283,7 @@ export function Header() {
                 <ChevronDown className="h-3 w-3 ml-1" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuContent className="w-64" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">Trader</p>
@@ -218,33 +293,35 @@ export function Header() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
+              
+              {/* Mode Selector for Mobile */}
               <div className="px-2 py-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Mode:</span>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant={!isDemo ? "default" : "ghost"}
-                      size="sm"
-                      className="h-6 px-2 text-[10px]"
-                      onClick={() => handleModeSwitch("REAL")}
-                    >
-                      REAL
-                    </Button>
-                    <Button
-                      variant={isDemo ? "default" : "ghost"}
-                      size="sm"
-                      className={cn(
-                        "h-6 px-2 text-[10px]",
-                        isDemo && "bg-amber-500 hover:bg-amber-600"
-                      )}
-                      onClick={() => handleModeSwitch("DEMO")}
-                    >
-                      DEMO
-                    </Button>
-                  </div>
+                <Label className="text-xs text-muted-foreground">Trading Mode</Label>
+                <div className="grid grid-cols-2 gap-1 mt-1">
+                  {Object.entries(MODE_CONFIG).map(([mode, config]) => {
+                    const Icon = config.icon;
+                    const isActive = currentMode === mode;
+                    return (
+                      <Button
+                        key={mode}
+                        variant={isActive ? "default" : "ghost"}
+                        size="sm"
+                        className={cn(
+                          "h-7 text-[10px] justify-start",
+                          isActive && config.bgColor,
+                          isActive && config.color
+                        )}
+                        onClick={() => handleModeChange(mode as ExtendedTradingMode)}
+                      >
+                        <Icon className="h-3 w-3 mr-1" />
+                        {config.label}
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
-              {isDemo && (
+              
+              {currentMode !== "LIVE" && (
                 <DropdownMenuItem onClick={handleResetBalance}>
                   <RefreshCw className="mr-2 h-4 w-4" />
                   <span>Reset Balance</span>

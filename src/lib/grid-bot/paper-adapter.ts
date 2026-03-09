@@ -3,6 +3,8 @@
  * 
  * Адаптер для виртуальной торговли с реальными ценами.
  * Полностью симулирует торговлю без реальных ордеров.
+ * 
+ * Supports multiple exchanges: Binance, Bybit, OKX, Bitget, BingX
  */
 
 import {
@@ -15,11 +17,17 @@ import {
   PositionInfo,
 } from './types';
 import { EventEmitter } from 'events';
+import {
+  fetchPriceFromExchange,
+  PriceData,
+  ExchangeId,
+} from '@/lib/exchange/price-fetcher';
 
 // ==================== PAPER TRADING ADAPTER ====================
 
 export class GridBotPaperAdapter extends EventEmitter implements GridBotAdapter {
   private symbol: string;
+  private exchange: ExchangeId;
   private connected: boolean = false;
   private priceCallbacks: ((price: number) => void)[] = [];
   
@@ -31,6 +39,7 @@ export class GridBotPaperAdapter extends EventEmitter implements GridBotAdapter 
   
   // Price tracking
   private currentPrice: number = 0;
+  private currentPriceData: PriceData | null = null;
   private lastOrderbook: OrderbookSnapshot | null = null;
   private priceUpdateInterval: NodeJS.Timeout | null = null;
   private wsConnection: any = null;
@@ -44,12 +53,14 @@ export class GridBotPaperAdapter extends EventEmitter implements GridBotAdapter 
   constructor(
     symbol: string,
     initialBalance: number = 10000,
-    leverage: number = 1
+    leverage: number = 1,
+    exchange: ExchangeId = "binance"
   ) {
     super();
     this.symbol = symbol;
     this.initialBalance = initialBalance;
     this.leverage = leverage;
+    this.exchange = exchange;
     
     // Parse symbol
     const { base, quote } = this.parseSymbol(symbol);
@@ -104,22 +115,33 @@ export class GridBotPaperAdapter extends EventEmitter implements GridBotAdapter 
 
   /**
    * Получить реальную цену с биржи
+   * Теперь поддерживает все биржи: Binance, Bybit, OKX, Bitget, BingX
    */
   private async fetchRealPrice(): Promise<void> {
     try {
-      // Fetch from Binance public API
-      const response = await fetch(
-        `https://fapi.binance.com/fapi/v1/ticker/price?symbol=${this.symbol}`
-      );
+      // Fetch from selected exchange using our multi-exchange price fetcher
+      const priceData = await fetchPriceFromExchange(this.symbol, this.exchange);
       
-      if (response.ok) {
-        const data = await response.json();
-        this.currentPrice = parseFloat(data.price);
+      if (priceData) {
+        this.currentPrice = priceData.price;
+        this.currentPriceData = priceData;
         
         // Update position mark price
         if (this.position) {
           this.position.markPrice = this.currentPrice;
           this.position.unrealizedPnl = this.calculateUnrealizedPnl();
+        }
+        
+        console.log(`[GridBotPaperAdapter] Price from ${this.exchange}: ${this.symbol} = ${this.currentPrice}`);
+      } else {
+        // Fallback to Binance if selected exchange fails
+        if (this.exchange !== "binance") {
+          console.log(`[GridBotPaperAdapter] ${this.exchange} failed, falling back to Binance`);
+          const fallbackData = await fetchPriceFromExchange(this.symbol, "binance");
+          if (fallbackData) {
+            this.currentPrice = fallbackData.price;
+            this.currentPriceData = fallbackData;
+          }
         }
       }
     } catch (error) {

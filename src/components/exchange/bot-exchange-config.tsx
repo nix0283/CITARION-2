@@ -38,7 +38,8 @@ const EXCHANGES = [
     hasTestnet: true,
     hasDemo: false,
     testnetUrl: "https://testnet.binancefuture.com",
-    docsUrl: "https://www.binance.com/en/support/faq/how-to-create-api-keys-on-binance-360002502072"
+    docsUrl: "https://www.binance.com/en/support/faq/how-to-create-api-keys-on-binance-360002502072",
+    demoInstructions: null,
   },
   {
     id: "bybit",
@@ -46,7 +47,8 @@ const EXCHANGES = [
     hasTestnet: true,
     hasDemo: false,
     testnetUrl: "https://testnet.bybit.com",
-    docsUrl: "https://www.bybit.com/en-US/help-center/article/How-to-create-an-API-key"
+    docsUrl: "https://www.bybit.com/en-US/help-center/article/How-to-create-an-API-key",
+    demoInstructions: null,
   },
   {
     id: "okx",
@@ -54,7 +56,19 @@ const EXCHANGES = [
     hasTestnet: false,
     hasDemo: true,
     testnetUrl: null,
-    docsUrl: "https://www.okx.com/learn/how-to-create-an-okx-api-key"
+    docsUrl: "https://www.okx.com/learn/how-to-create-an-okx-api-key",
+    demoInstructions: {
+      title: "OKX Demo Trading Setup",
+      steps: [
+        "1. Create account at okx.com and complete KYC",
+        "2. Go to Profile → API → Create API Key",
+        "3. Select 'Demo Trading' permission (NOT Withdraw!)",
+        "4. Set Passphrase and save it securely",
+        "5. Enter API Key, Secret, and Passphrase below",
+      ],
+      note: "OKX Demo uses virtual funds on live API. No testnet available.",
+      initialBalance: "10,000 USDT (Demo)",
+    },
   },
   {
     id: "bitget",
@@ -62,7 +76,19 @@ const EXCHANGES = [
     hasTestnet: false,
     hasDemo: true,
     testnetUrl: null,
-    docsUrl: "https://www.bitget.com/academy/how-to-create-bitget-api-key"
+    docsUrl: "https://www.bitget.com/academy/how-to-create-bitget-api-key",
+    demoInstructions: {
+      title: "Bitget Demo Trading Setup",
+      steps: [
+        "1. Create account at bitget.com",
+        "2. Go to Account → API Management",
+        "3. Create API Key with 'Read' + 'Trade' permissions",
+        "4. Enable Demo Trading in API settings",
+        "5. Enter API Key, Secret, and Passphrase below",
+      ],
+      note: "Bitget Demo uses S-prefixed symbols (SBTCUSDT).",
+      initialBalance: "50,000 SUSDT (Demo)",
+    },
   },
   {
     id: "bingx",
@@ -70,8 +96,20 @@ const EXCHANGES = [
     hasTestnet: false,
     hasDemo: true,
     testnetUrl: null,
-    docsUrl: "https://bingx.com/en-us/academy/detail/How-to-create-API-key-on-BingX.htm"
-  }
+    docsUrl: "https://bingx.com/en-us/academy/detail/How-to-create-API-key-on-BingX.htm",
+    demoInstructions: {
+      title: "BingX Demo Trading Setup",
+      steps: [
+        "1. Create account at bingx.com",
+        "2. Go to Account → API Management",
+        "3. Create API Key with 'Trade' permission",
+        "4. Enable Demo Mode in settings",
+        "5. Enter API Key and Secret below",
+      ],
+      note: "BingX Demo uses VST (Virtual Simulation Token).",
+      initialBalance: "100,000 VST (Demo)",
+    },
+  },
 ] as const;
 
 type ExchangeId = typeof EXCHANGES[number]["id"];
@@ -369,6 +407,32 @@ export function BotExchangeConfig({
                   >
                     {exchange.testnetUrl}
                   </a>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {tradingMode === "DEMO" && exchange.demoInstructions && (
+              <Alert className="bg-purple-500/5 border-purple-500/20">
+                <TestTube className="h-4 w-4 text-purple-500" />
+                <AlertDescription className="text-sm space-y-2">
+                  <p className="font-medium text-purple-600 dark:text-purple-400">
+                    {exchange.demoInstructions.title}
+                  </p>
+                  <ol className="list-decimal list-inside space-y-1 text-muted-foreground">
+                    {exchange.demoInstructions.steps.map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                  </ol>
+                  {exchange.demoInstructions.note && (
+                    <p className="text-xs text-muted-foreground italic mt-2">
+                      💡 {exchange.demoInstructions.note}
+                    </p>
+                  )}
+                  {exchange.demoInstructions.initialBalance && (
+                    <p className="text-xs font-medium text-purple-600 dark:text-purple-400">
+                      Starting Balance: {exchange.demoInstructions.initialBalance}
+                    </p>
+                  )}
                 </AlertDescription>
               </Alert>
             )}
