@@ -520,14 +520,21 @@ export function PriceChart() {
   // Only re-create chart on symbol/timeframe change, not on every price update
   }, [symbol, timeframe, hasPaneIndicators]);
 
+  // Ref to track if initial data was loaded for current symbol/timeframe
+  const dataLoadedForRef = useRef<{ symbol: string; timeframe: string } | null>(null);
+
   // Fetch data on mount and when symbol/timeframe changes
   useEffect(() => {
     let cancelled = false;
+
+    // Reset loaded state when symbol/timeframe changes
+    dataLoadedForRef.current = null;
 
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
       try {
+        // Fetch OHLCV data - API automatically checks freshness
         const response = await fetch(
           `/api/ohlcv?symbol=${symbol}&interval=${timeframe}&limit=500`
         );
@@ -546,6 +553,8 @@ export function PriceChart() {
             }));
 
             if (!cancelled) {
+              // Mark data as loaded for this symbol/timeframe
+              dataLoadedForRef.current = { symbol, timeframe };
               setCandles(ohlcv);
               const lastCandle = ohlcv[ohlcv.length - 1];
               setCurrentPrice(lastCandle.close);
@@ -665,73 +674,79 @@ export function PriceChart() {
     }
   }, [prices, symbol, isLoading, isRealtimeConnected]);
 
-  // Ref to track if initial data was loaded
-  const initialDataLoadedRef = useRef(false);
-  const prevSymbolRef = useRef(symbol);
-  const prevTimeframeRef = useRef(timeframe);
+  // Track last candles data to detect actual changes
+  const lastCandlesKeyRef = useRef<string>("");
 
-  // Update chart data - ONLY for initial load or symbol/timeframe change
+  // Update chart data when candles change OR when chart becomes ready
   useEffect(() => {
-    if (!chartRef.current || !isChartReady || candles.length === 0 || isDisposedRef.current) return;
+    if (!chartRef.current || candles.length === 0 || isDisposedRef.current) return;
 
-    // Check if symbol or timeframe changed - need full reload
-    const symbolChanged = prevSymbolRef.current !== symbol;
-    const timeframeChanged = prevTimeframeRef.current !== timeframe;
+    // Wait for chart to be ready
+    if (!isChartReady) return;
 
-    // Only do full setData on initial load or symbol/timeframe change
-    if (!initialDataLoadedRef.current || symbolChanged || timeframeChanged) {
-      initialDataLoadedRef.current = true;
-      prevSymbolRef.current = symbol;
-      prevTimeframeRef.current = timeframe;
+    // Create a key to detect if candles actually changed
+    const candlesKey = `${symbol}-${timeframe}-${candles.length}-${candles[0]?.time}-${candles[candles.length-1]?.time}`;
+    
+    // Skip if candles haven't actually changed
+    if (lastCandlesKeyRef.current === candlesKey) return;
+    lastCandlesKeyRef.current = candlesKey;
 
-      const candleData = toCandlestickData(candles);
-      const volumeData = toVolumeData(candles);
+    const candleData = toCandlestickData(candles);
+    const volumeData = toVolumeData(candles);
 
-      if (candleData.length === 0) return;
+    if (candleData.length === 0) return;
 
-      // Update candlestick data
-      if (candleSeriesRef.current && !isDisposedRef.current) {
-        try {
-          candleSeriesRef.current.setData(candleData);
+    console.log('[PriceChart] Setting chart data:', {
+      candlesCount: candles.length,
+      candleDataCount: candleData.length,
+      symbol,
+      timeframe,
+      firstCandle: new Date(candles[0].time * 1000).toISOString(),
+      lastCandle: new Date(candles[candles.length-1].time * 1000).toISOString(),
+    });
 
-          // CIT-044: Set order markers on candlestick series
-          if (showOrderMarkers && processedMarkers.length > 0 && 'setMarkers' in candleSeriesRef.current) {
-            (candleSeriesRef.current as any).setMarkers(processedMarkers.map(m => ({
-              time: m.time,
-              position: m.position,
-              color: m.color,
-              shape: m.shape,
-              text: m.text,
-            })));
-          }
-        } catch (e) {
-          // Ignore errors if chart is disposed
+    // Update candlestick data
+    if (candleSeriesRef.current && !isDisposedRef.current) {
+      try {
+        candleSeriesRef.current.setData(candleData);
+
+        // CIT-044: Set order markers on candlestick series
+        if (showOrderMarkers && processedMarkers.length > 0 && 'setMarkers' in candleSeriesRef.current) {
+          (candleSeriesRef.current as any).setMarkers(processedMarkers.map(m => ({
+            time: m.time,
+            position: m.position,
+            color: m.color,
+            shape: m.shape,
+            text: m.text,
+          })));
         }
-      }
-
-      // Update volume data
-      if (volumeSeriesRef.current && !isDisposedRef.current) {
-        try {
-          if (showVolume) {
-            volumeSeriesRef.current.setData(volumeData);
-          } else {
-            volumeSeriesRef.current.setData([]);
-          }
-        } catch (e) {
-          // Ignore errors if chart is disposed
-        }
-      }
-
-      // Fit content
-      if (!isDisposedRef.current && chartRef.current) {
-        try {
-          chartRef.current.timeScale().fitContent();
-        } catch (e) {
-          // Ignore errors if chart is disposed
-        }
+      } catch (e) {
+        console.error('[PriceChart] Error setting candle data:', e);
       }
     }
-  }, [candles.length, showVolume, isChartReady, processedMarkers, showOrderMarkers, symbol, timeframe]);
+
+    // Update volume data
+    if (volumeSeriesRef.current && !isDisposedRef.current) {
+      try {
+        if (showVolume) {
+          volumeSeriesRef.current.setData(volumeData);
+        } else {
+          volumeSeriesRef.current.setData([]);
+        }
+      } catch (e) {
+        console.error('[PriceChart] Error setting volume data:', e);
+      }
+    }
+
+    // Fit content
+    if (!isDisposedRef.current && chartRef.current) {
+      try {
+        chartRef.current.timeScale().fitContent();
+      } catch (e) {
+        // Ignore errors if chart is disposed
+      }
+    }
+  }, [candles, showVolume, isChartReady, processedMarkers, showOrderMarkers, symbol, timeframe]);
 
   // Render overlay indicators on main chart (pane 0)
   useEffect(() => {
