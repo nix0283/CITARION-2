@@ -260,12 +260,18 @@ export function PriceChart() {
 
   const hasPaneIndicators = paneIndicators.length > 0;
 
-  // Initialize chart with panes support
+  // Track if chart is disposed to prevent updates after disposal
+  const isDisposedRef = useRef(false);
+
+  // Initialize chart ONCE - only re-create on symbol/timeframe change
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
+    // Mark as not disposed
+    isDisposedRef.current = false;
+
     const initChart = () => {
-      if (!chartContainerRef.current) return;
+      if (!chartContainerRef.current || isDisposedRef.current) return;
       
       const container = chartContainerRef.current;
       const width = container.clientWidth;
@@ -274,6 +280,21 @@ export function PriceChart() {
       if (width === 0 || height === 0) {
         requestAnimationFrame(initChart);
         return;
+      }
+
+      // Clean up existing chart first
+      if (chartRef.current) {
+        try {
+          chartRef.current.remove();
+        } catch (e) {
+          // Ignore disposal errors
+        }
+        chartRef.current = null;
+        candleSeriesRef.current = null;
+        volumeSeriesRef.current = null;
+        overlaySeriesRef.current.clear();
+        paneSeriesRef.current.clear();
+        priceLinesRef.current.clear();
       }
 
       // Create chart with panes configuration
@@ -333,6 +354,14 @@ export function PriceChart() {
           vertTouchDrag: true,
         },
       } as any);
+
+      if (isDisposedRef.current) {
+        // Chart was disposed during initialization
+        try {
+          chart.remove();
+        } catch (e) {}
+        return;
+      }
 
       chartRef.current = chart;
 
@@ -447,11 +476,15 @@ export function PriceChart() {
     requestAnimationFrame(initChart);
 
     const handleResize = () => {
-      if (chartContainerRef.current && chartRef.current) {
-        chartRef.current.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-          height: chartContainerRef.current.clientHeight,
-        });
+      if (chartContainerRef.current && chartRef.current && !isDisposedRef.current) {
+        try {
+          chartRef.current.applyOptions({
+            width: chartContainerRef.current.clientWidth,
+            height: chartContainerRef.current.clientHeight,
+          });
+        } catch (e) {
+          // Ignore errors if chart is disposed
+        }
       }
     };
 
@@ -463,14 +496,29 @@ export function PriceChart() {
     }
 
     return () => {
+      // Mark as disposed first to prevent any further updates
+      isDisposedRef.current = true;
+      setIsChartReady(false);
+      
       window.removeEventListener("resize", handleResize);
       resizeObserver.disconnect();
+      
       if (chartRef.current) {
-        chartRef.current.remove();
+        try {
+          chartRef.current.remove();
+        } catch (e) {
+          // Ignore disposal errors
+        }
         chartRef.current = null;
+        candleSeriesRef.current = null;
+        volumeSeriesRef.current = null;
+        overlaySeriesRef.current.clear();
+        paneSeriesRef.current.clear();
+        priceLinesRef.current.clear();
       }
     };
-  }, [hasPaneIndicators, activeIndicators, oneClickEnabled, currentPrice, symbol]);
+  // Only re-create chart on symbol/timeframe change, not on every price update
+  }, [symbol, timeframe, hasPaneIndicators]);
 
   // Fetch data on mount and when symbol/timeframe changes
   useEffect(() => {
@@ -557,7 +605,7 @@ export function PriceChart() {
   // Real-time price updates from existing WebSocket connection (PriceProvider)
   // Uses update() for efficient single-candle updates without full re-render
   useEffect(() => {
-    if (isLoading || !symbol || !candleSeriesRef.current) return;
+    if (isLoading || !symbol || !candleSeriesRef.current || isDisposedRef.current) return;
 
     // Get the current symbol's price from WebSocket
     const priceData = prices[symbol];
@@ -578,6 +626,9 @@ export function PriceChart() {
     const currentCandles = candlesRef.current;
     if (currentCandles.length === 0) return;
 
+    // Double-check chart is not disposed before updating
+    if (isDisposedRef.current || !chartRef.current) return;
+
     lastUpdateRef.current = now;
     lastPriceRef.current = newPrice;
 
@@ -596,12 +647,14 @@ export function PriceChart() {
 
     // Use update() for efficient real-time updates (no full re-render)
     try {
-      candleSeriesRef.current.update(updatedCandle);
-      // Update ref for next comparison (don't trigger state update)
-      candlesRef.current = [
-        ...currentCandles.slice(0, -1),
-        { ...lastCandle, close: newPrice, high: Math.max(lastCandle.high, newPrice), low: Math.min(lastCandle.low, newPrice) }
-      ];
+      if (!isDisposedRef.current && candleSeriesRef.current) {
+        candleSeriesRef.current.update(updatedCandle);
+        // Update ref for next comparison (don't trigger state update)
+        candlesRef.current = [
+          ...currentCandles.slice(0, -1),
+          { ...lastCandle, close: newPrice, high: Math.max(lastCandle.high, newPrice), low: Math.min(lastCandle.low, newPrice) }
+        ];
+      }
     } catch (e) {
       // Ignore update errors
     }
@@ -619,7 +672,7 @@ export function PriceChart() {
 
   // Update chart data - ONLY for initial load or symbol/timeframe change
   useEffect(() => {
-    if (!chartRef.current || !isChartReady || candles.length === 0) return;
+    if (!chartRef.current || !isChartReady || candles.length === 0 || isDisposedRef.current) return;
 
     // Check if symbol or timeframe changed - need full reload
     const symbolChanged = prevSymbolRef.current !== symbol;
@@ -637,7 +690,7 @@ export function PriceChart() {
       if (candleData.length === 0) return;
 
       // Update candlestick data
-      if (candleSeriesRef.current) {
+      if (candleSeriesRef.current && !isDisposedRef.current) {
         try {
           candleSeriesRef.current.setData(candleData);
 
@@ -652,12 +705,12 @@ export function PriceChart() {
             })));
           }
         } catch (e) {
-          console.error('Error setting candlestick data:', e);
+          // Ignore errors if chart is disposed
         }
       }
 
       // Update volume data
-      if (volumeSeriesRef.current) {
+      if (volumeSeriesRef.current && !isDisposedRef.current) {
         try {
           if (showVolume) {
             volumeSeriesRef.current.setData(volumeData);
@@ -665,22 +718,24 @@ export function PriceChart() {
             volumeSeriesRef.current.setData([]);
           }
         } catch (e) {
-          console.error('Error setting volume data:', e);
+          // Ignore errors if chart is disposed
         }
       }
 
       // Fit content
-      try {
-        chartRef.current.timeScale().fitContent();
-      } catch (e) {
-        console.error('Error fitting content:', e);
+      if (!isDisposedRef.current && chartRef.current) {
+        try {
+          chartRef.current.timeScale().fitContent();
+        } catch (e) {
+          // Ignore errors if chart is disposed
+        }
       }
     }
   }, [candles.length, showVolume, isChartReady, processedMarkers, showOrderMarkers, symbol, timeframe]);
 
   // Render overlay indicators on main chart (pane 0)
   useEffect(() => {
-    if (!chartRef.current || !isChartReady || !candles || candles.length === 0) return;
+    if (!chartRef.current || !isChartReady || !candles || candles.length === 0 || isDisposedRef.current) return;
 
     const chart = chartRef.current;
 
@@ -701,15 +756,19 @@ export function PriceChart() {
       if (!activeIndicatorIds.has(id)) {
         series.forEach((s) => {
           try {
-            chart.removeSeries(s);
+            if (!isDisposedRef.current) {
+              chart.removeSeries(s);
+            }
           } catch (e) {}
         });
         overlaySeriesRef.current.delete(id);
       }
     });
 
+    if (isDisposedRef.current) return;
+
     overlayIndicators.forEach((config) => {
-      if (overlaySeriesRef.current.has(config.id)) {
+      if (overlaySeriesRef.current.has(config.id) || isDisposedRef.current) {
         return;
       }
 
@@ -717,17 +776,16 @@ export function PriceChart() {
       try {
         result = calculateIndicator(config.indicator, validCandles, config.inputs);
       } catch (e) {
-        console.error('Error calculating indicator:', config.indicator.id, e);
         return;
       }
       
-      if (!result) return;
+      if (!result || isDisposedRef.current) return;
 
       const series: ISeriesApi<"Line" | "Histogram">[] = [];
 
       if (result.lines && Array.isArray(result.lines)) {
         result.lines.forEach((line) => {
-          if (!line || !line.data || !Array.isArray(line.data) || line.data.length === 0) return;
+          if (!line || !line.data || !Array.isArray(line.data) || line.data.length === 0 || isDisposedRef.current) return;
           try {
             const lineSeries = chart.addLineSeries({
               color: line.color || '#2962FF',
