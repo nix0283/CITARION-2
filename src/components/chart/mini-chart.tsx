@@ -10,7 +10,7 @@ import {
   CandlestickSeries,
 } from "lightweight-charts";
 import type { CandlestickData } from "lightweight-charts";
-import { Loader2 } from "lucide-react";
+import { Loader2, AlertTriangle } from "lucide-react";
 
 interface MiniChartProps {
   exchangeId?: string;
@@ -19,26 +19,19 @@ interface MiniChartProps {
   chartId?: string;
 }
 
-// Map exchange IDs to their API endpoints
-const EXCHANGE_API_MAP: Record<string, string> = {
-  binance: "https://api.binance.com/api/v3/klines",
-  bybit: "https://api.bybit.com/v5/derivatives/v3/public/kline",
-  // Add more exchanges as needed
-};
-
 // Default symbols per exchange
 const DEFAULT_SYMBOL = "BTCUSDT";
 
-export function MiniChart({ 
-  exchangeId = "binance", 
+export function MiniChart({
+  exchangeId = "binance",
   symbol = DEFAULT_SYMBOL,
   timeframe = "1h",
-  chartId 
+  chartId
 }: MiniChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,26 +132,17 @@ export function MiniChart({
             chartRef.current.timeScale().fitContent();
           }
         } else {
-          // Generate synthetic data as fallback
-          const syntheticData = generateSyntheticData(100);
+          // No data available - show error instead of synthetic data
+          setError(data.error || "Нет данных");
           if (candleSeriesRef.current) {
-            candleSeriesRef.current.setData(syntheticData);
-          }
-          if (chartRef.current) {
-            chartRef.current.timeScale().fitContent();
+            candleSeriesRef.current.setData([]);
           }
         }
       } catch (err) {
         console.error("Mini chart error:", err);
         setError("Ошибка загрузки");
-        
-        // Generate synthetic data on error
-        const syntheticData = generateSyntheticData(100);
         if (candleSeriesRef.current) {
-          candleSeriesRef.current.setData(syntheticData);
-        }
-        if (chartRef.current) {
-          chartRef.current.timeScale().fitContent();
+          candleSeriesRef.current.setData([]);
         }
       } finally {
         setIsLoading(false);
@@ -176,39 +160,14 @@ export function MiniChart({
         </div>
       )}
       {error && !isLoading && (
-        <div className="absolute top-1 right-1 text-[10px] text-muted-foreground z-10">
-          {error}
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <div className="flex items-center gap-1 text-amber-500 text-xs">
+            <AlertTriangle className="h-3 w-3" />
+            <span>{error}</span>
+          </div>
         </div>
       )}
       <div ref={chartContainerRef} className="w-full h-full" />
     </div>
   );
-}
-
-// Generate synthetic candlestick data for fallback
-function generateSyntheticData(candles: number): CandlestickData<Time>[] {
-  const data: CandlestickData<Time>[] = [];
-  let price = 97000; // BTC price
-  const now = Math.floor(Date.now() / 1000);
-  const interval = 3600;
-
-  for (let i = candles; i >= 0; i--) {
-    const time = now - i * interval;
-    const change = (Math.random() - 0.5) * 2 * 0.01 * price;
-    const open = price;
-    const close = price + change;
-    const high = Math.max(open, close) * (1 + Math.random() * 0.005);
-    const low = Math.min(open, close) * (1 - Math.random() * 0.005);
-
-    data.push({
-      time: time as Time,
-      open,
-      high,
-      low,
-      close,
-    } as CandlestickData<Time>);
-    price = close;
-  }
-
-  return data;
 }

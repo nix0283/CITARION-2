@@ -20,6 +20,7 @@ import {
   MousePointer2,
   Wifi,
   WifiOff,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -58,20 +59,6 @@ const SYMBOLS = [
   "DOGEUSDT", "ADAUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT",
 ];
 
-// Base prices for different symbols
-const BASE_PRICES: Record<string, number> = {
-  BTCUSDT: 97000,
-  ETHUSDT: 3200,
-  SOLUSDT: 180,
-  BNBUSDT: 650,
-  XRPUSDT: 2.5,
-  DOGEUSDT: 0.35,
-  ADAUSDT: 0.8,
-  AVAXUSDT: 35,
-  DOTUSDT: 6,
-  LINKUSDT: 18,
-};
-
 interface ChartCandle {
   time: Time;
   open: number;
@@ -98,40 +85,6 @@ interface TooltipData {
   close: number | null;
   volume: number | null;
   indicators: Array<{ name: string; value: number | null; color: string }>;
-}
-
-// Generate synthetic OHLCV data
-function generateOHLCV(
-  basePrice: number,
-  candles: number = 500,
-  volatility: number = 0.02
-): ChartCandle[] {
-  const data: ChartCandle[] = [];
-  let price = basePrice;
-  const now = Math.floor(Date.now() / 1000);
-  const interval = 3600; // 1h
-
-  for (let i = candles; i >= 0; i--) {
-    const time = now - i * interval;
-    const change = (Math.random() - 0.5) * 2 * volatility * price;
-    const open = price;
-    const close = price + change;
-    const high = Math.max(open, close) * (1 + Math.random() * volatility * 0.5);
-    const low = Math.min(open, close) * (1 - Math.random() * volatility * 0.5);
-    const volume = 1000 + Math.random() * 10000;
-
-    data.push({
-      time: time as Time,
-      open,
-      high,
-      low,
-      close,
-      volume,
-    });
-    price = close;
-  }
-
-  return data;
 }
 
 // Validate candle data
@@ -201,6 +154,7 @@ export function PriceChart() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [timeframe, setTimeframe] = useState("1h");
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isChartReady, setIsChartReady] = useState(false);
   const [candles, setCandles] = useState<ChartCandle[]>([]);
   const [showVolume, setShowVolume] = useState(true);
@@ -521,6 +475,7 @@ export function PriceChart() {
 
     const fetchData = async () => {
       setIsLoading(true);
+      setError(null);
       try {
         const response = await fetch(
           `/api/ohlcv?symbol=${symbol}&interval=${timeframe}&limit=500`
@@ -549,32 +504,24 @@ export function PriceChart() {
             }
             return;
           }
-        }
 
-        const basePrice = BASE_PRICES[symbol] || 1000;
-        const syntheticData = generateOHLCV(basePrice, 500, 0.02);
+          // API returned error
+          if (!cancelled) {
+            setError(data.error || 'Не удалось загрузить данные');
+            setCandles([]);
+          }
+        } else {
+          if (!cancelled) {
+            setError('Ошибка сервера при загрузке данных');
+            setCandles([]);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch chart data:", err);
 
         if (!cancelled) {
-          setCandles(syntheticData);
-          const lastCandle = syntheticData[syntheticData.length - 1];
-          setCurrentPrice(lastCandle.close);
-          setPriceChange(
-            ((lastCandle.close - syntheticData[0].open) / syntheticData[0].open) * 100
-          );
-        }
-      } catch (error) {
-        console.error("Failed to fetch chart data:", error);
-
-        if (!cancelled) {
-          const basePrice = BASE_PRICES[symbol] || 1000;
-          const syntheticData = generateOHLCV(basePrice, 500, 0.02);
-
-          setCandles(syntheticData);
-          const lastCandle = syntheticData[syntheticData.length - 1];
-          setCurrentPrice(lastCandle.close);
-          setPriceChange(
-            ((lastCandle.close - syntheticData[0].open) / syntheticData[0].open) * 100
-          );
+          setError('Не удалось подключиться к серверу');
+          setCandles([]);
         }
       } finally {
         if (!cancelled) {
@@ -970,19 +917,47 @@ export function PriceChart() {
     return `$${price.toFixed(4)}`;
   };
 
-  const handleRefresh = useCallback(() => {
+  const handleRefresh = useCallback(async () => {
     setIsLoading(true);
-    const basePrice = BASE_PRICES[symbol] || 1000;
-    const syntheticData = generateOHLCV(basePrice, 500, 0.02);
-    setCandles(syntheticData);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/ohlcv?symbol=${symbol}&interval=${timeframe}&limit=500&forceFetch=true`
+      );
 
-    const lastCandle = syntheticData[syntheticData.length - 1];
-    setCurrentPrice(lastCandle.close);
-    setPriceChange(
-      ((lastCandle.close - syntheticData[0].open) / syntheticData[0].open) * 100
-    );
-    setIsLoading(false);
-  }, [symbol]);
+      if (response.ok) {
+        const data = await response.json();
+
+        if (data.success && data.ohlcv && data.ohlcv.length > 0) {
+          const ohlcv: ChartCandle[] = data.ohlcv.map((c: number[]) => ({
+            time: Math.floor(c[0] / 1000) as Time,
+            open: c[1],
+            high: c[2],
+            low: c[3],
+            close: c[4],
+            volume: c[5],
+          }));
+
+          setCandles(ohlcv);
+          const lastCandle = ohlcv[ohlcv.length - 1];
+          setCurrentPrice(lastCandle.close);
+          setPriceChange(
+            ((lastCandle.close - ohlcv[0].open) / ohlcv[0].open) * 100
+          );
+        } else {
+          setError(data.error || 'Не удалось загрузить данные');
+          setCandles([]);
+        }
+      } else {
+        setError('Ошибка сервера при загрузке данных');
+      }
+    } catch (err) {
+      console.error("Failed to refresh chart data:", err);
+      setError('Не удалось подключиться к серверу');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [symbol, timeframe]);
 
   const handleIndicatorsChange = useCallback((indicators: IndicatorConfig[]) => {
     setActiveIndicators(indicators);
@@ -1177,12 +1152,26 @@ export function PriceChart() {
           )}
           data-testid="price-chart"
         >
-          {(isLoading || !isChartReady || candles.length === 0) && (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#131722] z-10">
+          {(isLoading || !isChartReady || candles.length === 0 || error) && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#131722] z-10 gap-3">
               {isLoading || !isChartReady ? (
                 <>
                   <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <span className="ml-2">Загрузка данных...</span>
+                  <span className="text-muted-foreground">Загрузка данных...</span>
+                </>
+              ) : error ? (
+                <>
+                  <AlertTriangle className="h-8 w-8 text-amber-500" />
+                  <span className="text-amber-500 text-center px-4">{error}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefresh}
+                    className="mt-2"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Повторить
+                  </Button>
                 </>
               ) : (
                 <span className="text-muted-foreground">Нет данных</span>
