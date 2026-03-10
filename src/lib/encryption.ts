@@ -365,33 +365,438 @@ export function maskApiKey(apiKey: string): string {
 }
 
 /**
- * Validate API key format
+ * API Key Validation Result
+ * Detailed result with user-friendly error messages
+ */
+export interface ApiKeyValidationResult {
+  isValid: boolean;
+  error?: string;
+  errorKey?: string;  // For i18n/translation
+  details?: {
+    expectedLength?: number | string;
+    actualLength?: number;
+    expectedFormat?: string;
+    exchange?: string;
+  };
+}
+
+/**
+ * API Key Format Specifications by Exchange
+ * Based on official exchange API documentation
+ */
+const API_KEY_SPECS: Record<string, {
+  minLength: number;
+  maxLength: number;
+  pattern: RegExp;
+  description: string;
+  exampleFormat: string;
+}> = {
+  binance: {
+    minLength: 64,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9]{64}$/,
+    description: "Binance API ключ должен содержать ровно 64 символа (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (64 символа)"
+  },
+  bybit: {
+    minLength: 20,
+    maxLength: 48,
+    pattern: /^[a-zA-Z0-9]{20,48}$/,
+    description: "Bybit API ключ должен содержать от 20 до 48 символов (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (20-48 символов)"
+  },
+  okx: {
+    minLength: 36,
+    maxLength: 48,
+    pattern: /^[a-zA-Z0-9-]{36,48}$/,
+    description: "OKX API ключ должен содержать от 36 до 48 символов (буквы, цифры и дефисы)",
+    exampleFormat: "Пример: aBc-123...XYZ (36-48 символов с дефисами)"
+  },
+  bitget: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9]{32,64}$/,
+    description: "Bitget API ключ должен содержать от 32 до 64 символов (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (32-64 символа)"
+  },
+  bingx: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9_-]{32,64}$/,
+    description: "BingX API ключ должен содержать от 32 до 64 символов (буквы, цифры, дефисы и подчёркивания)",
+    exampleFormat: "Пример: aBc_123-XYZ (32-64 символа)"
+  },
+  kucoin: {
+    minLength: 24,
+    maxLength: 32,
+    pattern: /^[a-zA-Z0-9]{24,32}$/,
+    description: "KuCoin API ключ должен содержать от 24 до 32 символов (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (24-32 символа)"
+  },
+  coinbase: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9/+]{32,64}$/,
+    description: "Coinbase API ключ должен содержать от 32 до 64 символов (буквы, цифры, + и /)",
+    exampleFormat: "Пример: aBc/+123XYZ (32-64 символа)"
+  },
+  huobi: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9-]{32,64}$/,
+    description: "HTX (Huobi) API ключ должен содержать от 32 до 64 символов (буквы, цифры и дефисы)",
+    exampleFormat: "Пример: aBc-123...XYZ (32-64 символа)"
+  },
+  hyperliquid: {
+    minLength: 42,
+    maxLength: 42,
+    pattern: /^0x[a-fA-F0-9]{40}$/,
+    description: "HyperLiquid использует адрес кошелька Ethereum (начинается с 0x, 42 символа)",
+    exampleFormat: "Пример: 0x1234567890abcdef... (42 символа)"
+  },
+  bitmex: {
+    minLength: 24,
+    maxLength: 48,
+    pattern: /^[a-zA-Z0-9_-]{24,48}$/,
+    description: "BitMEX API ключ должен содержать от 24 до 48 символов (буквы, цифры, дефисы и подчёркивания)",
+    exampleFormat: "Пример: aBc_123-XYZ (24-48 символов)"
+  },
+  blofin: {
+    minLength: 36,
+    maxLength: 48,
+    pattern: /^[a-zA-Z0-9-]{36,48}$/,
+    description: "BloFin API ключ должен содержать от 36 до 48 символов (буквы, цифры и дефисы)",
+    exampleFormat: "Пример: aBc-123...XYZ (36-48 символов)"
+  },
+  gate: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9]{32,64}$/,
+    description: "Gate.io API ключ должен содержать от 32 до 64 символов (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (32-64 символа)"
+  },
+  aster: {
+    minLength: 32,
+    maxLength: 64,
+    pattern: /^[a-zA-Z0-9]{32,64}$/,
+    description: "Aster DEX API ключ должен содержать от 32 до 64 символов (буквы и цифры)",
+    exampleFormat: "Пример: aBc123...XYZ (32-64 символа)"
+  }
+};
+
+/**
+ * API Secret Format Specifications by Exchange
+ */
+const API_SECRET_SPECS: Record<string, {
+  minLength: number;
+  description: string;
+}> = {
+  binance: {
+    minLength: 64,
+    description: "Binance API Secret должен содержать минимум 64 символа"
+  },
+  bybit: {
+    minLength: 32,
+    description: "Bybit API Secret должен содержать минимум 32 символа"
+  },
+  okx: {
+    minLength: 32,
+    description: "OKX API Secret должен содержать минимум 32 символа"
+  },
+  bitget: {
+    minLength: 32,
+    description: "Bitget API Secret должен содержать минимум 32 символа"
+  },
+  bingx: {
+    minLength: 32,
+    description: "BingX API Secret должен содержать минимум 32 символа"
+  },
+  kucoin: {
+    minLength: 32,
+    description: "KuCoin API Secret должен содержать минимум 32 символа"
+  },
+  coinbase: {
+    minLength: 32,
+    description: "Coinbase API Secret должен содержать минимум 32 символа"
+  },
+  huobi: {
+    minLength: 32,
+    description: "HTX (Huobi) API Secret должен содержать минимум 32 символа"
+  },
+  hyperliquid: {
+    minLength: 64,
+    description: "HyperLiquid приватный ключ должен содержать минимум 64 символа"
+  },
+  bitmex: {
+    minLength: 32,
+    description: "BitMEX API Secret должен содержать минимум 32 символа"
+  },
+  blofin: {
+    minLength: 32,
+    description: "BloFin API Secret должен содержать минимум 32 символа"
+  },
+  gate: {
+    minLength: 32,
+    description: "Gate.io API Secret должен содержать минимум 32 символа"
+  },
+  aster: {
+    minLength: 32,
+    description: "Aster DEX API Secret должен содержать минимум 32 символа"
+  }
+};
+
+/**
+ * Validate API key format with detailed error messages
  * 
- * Performs basic format validation for known exchanges.
- * Note: This only validates format, not whether the key is valid/active.
+ * Performs format validation for known exchanges with user-friendly error messages.
+ * Note: This only validates format, not whether the key is valid/active on the exchange.
+ * 
+ * @param key - The API key to validate
+ * @param exchange - The exchange identifier (e.g., 'binance', 'bybit')
+ * @returns Detailed validation result with error messages
  */
 export function validateApiKeyFormat(key: string, exchange: string): boolean {
-  if (!key || key.length < 10) {
-    return false;
+  const result = validateApiKeyDetailed(key, exchange);
+  return result.isValid;
+}
+
+/**
+ * Validate API key with detailed result
+ * 
+ * @param key - The API key to validate
+ * @param exchange - The exchange identifier
+ * @returns Detailed validation result with error messages
+ */
+export function validateApiKeyDetailed(key: string, exchange: string): ApiKeyValidationResult {
+  const normalizedExchange = exchange.toLowerCase();
+  
+  // Basic checks
+  if (!key) {
+    return {
+      isValid: false,
+      error: "API ключ не указан",
+      errorKey: "api_key.required",
+      details: { exchange: normalizedExchange }
+    };
   }
   
-  // Exchange-specific validation
-  switch (exchange.toLowerCase()) {
-    case "binance":
-      // Binance API keys are 64 characters
-      return key.length === 64 && /^[a-zA-Z0-9]+$/.test(key);
-    
-    case "bybit":
-      // Bybit API keys vary in length
-      return key.length >= 20 && /^[a-zA-Z0-9]+$/.test(key);
-    
-    case "okx":
-      // OKX API keys have specific format
-      return key.length >= 20 && /^[a-zA-Z0-9-]+$/.test(key);
-    
-    default:
-      return key.length >= 10;
+  // Check for whitespace
+  if (key !== key.trim()) {
+    return {
+      isValid: false,
+      error: "API ключ содержит пробелы в начале или конце. Удалите их.",
+      errorKey: "api_key.whitespace",
+      details: { exchange: normalizedExchange }
+    };
   }
+  
+  // Check minimum length for any exchange
+  if (key.length < 10) {
+    return {
+      isValid: false,
+      error: "API ключ слишком короткий (минимум 10 символов)",
+      errorKey: "api_key.too_short",
+      details: { 
+        actualLength: key.length,
+        exchange: normalizedExchange 
+      }
+    };
+  }
+  
+  // Get exchange-specific spec
+  const spec = API_KEY_SPECS[normalizedExchange];
+  
+  if (!spec) {
+    // Unknown exchange - use basic validation
+    if (key.length >= 10) {
+      return { isValid: true };
+    }
+    return {
+      isValid: false,
+      error: `Неизвестная биржа: ${exchange}. API ключ должен содержать минимум 10 символов.`,
+      errorKey: "api_key.unknown_exchange",
+      details: { exchange: normalizedExchange }
+    };
+  }
+  
+  // Check length
+  if (key.length < spec.minLength || key.length > spec.maxLength) {
+    return {
+      isValid: false,
+      error: spec.description,
+      errorKey: "api_key.invalid_length",
+      details: {
+        expectedLength: spec.minLength === spec.maxLength 
+          ? spec.minLength 
+          : `${spec.minLength}-${spec.maxLength}`,
+        actualLength: key.length,
+        expectedFormat: spec.exampleFormat,
+        exchange: normalizedExchange
+      }
+    };
+  }
+  
+  // Check pattern
+  if (!spec.pattern.test(key)) {
+    return {
+      isValid: false,
+      error: spec.description,
+      errorKey: "api_key.invalid_format",
+      details: {
+        expectedFormat: spec.exampleFormat,
+        exchange: normalizedExchange
+      }
+    };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validate API secret with detailed result
+ * 
+ * @param secret - The API secret to validate
+ * @param exchange - The exchange identifier
+ * @returns Detailed validation result with error messages
+ */
+export function validateApiSecretDetailed(secret: string, exchange: string): ApiKeyValidationResult {
+  const normalizedExchange = exchange.toLowerCase();
+  
+  // Basic checks
+  if (!secret) {
+    return {
+      isValid: false,
+      error: "API Secret не указан",
+      errorKey: "api_secret.required",
+      details: { exchange: normalizedExchange }
+    };
+  }
+  
+  // Check for whitespace
+  if (secret !== secret.trim()) {
+    return {
+      isValid: false,
+      error: "API Secret содержит пробелы в начале или конце. Удалите их.",
+      errorKey: "api_secret.whitespace",
+      details: { exchange: normalizedExchange }
+    };
+  }
+  
+  // Get exchange-specific spec
+  const spec = API_SECRET_SPECS[normalizedExchange];
+  
+  if (!spec) {
+    // Unknown exchange - use basic validation
+    if (secret.length >= 16) {
+      return { isValid: true };
+    }
+    return {
+      isValid: false,
+      error: `API Secret слишком короткий (минимум 16 символов)`,
+      errorKey: "api_secret.too_short",
+      details: { 
+        actualLength: secret.length,
+        exchange: normalizedExchange 
+      }
+    };
+  }
+  
+  // Check minimum length
+  if (secret.length < spec.minLength) {
+    return {
+      isValid: false,
+      error: spec.description,
+      errorKey: "api_secret.too_short",
+      details: {
+        expectedLength: `минимум ${spec.minLength}`,
+        actualLength: secret.length,
+        exchange: normalizedExchange
+      }
+    };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validate passphrase for exchanges that require it (OKX, KuCoin, Bitget, BloFin)
+ * 
+ * @param passphrase - The passphrase to validate
+ * @param exchange - The exchange identifier
+ * @returns Validation result
+ */
+export function validatePassphrase(passphrase: string | undefined, exchange: string): ApiKeyValidationResult {
+  const normalizedExchange = exchange.toLowerCase();
+  const exchangesRequiringPassphrase = ['okx', 'kucoin', 'bitget', 'blofin'];
+  
+  if (exchangesRequiringPassphrase.includes(normalizedExchange)) {
+    if (!passphrase || passphrase.trim().length === 0) {
+      return {
+        isValid: false,
+        error: `${exchange.toUpperCase()} требует API Passphrase. Укажите его в настройках API ключа.`,
+        errorKey: "passphrase.required",
+        details: { exchange: normalizedExchange }
+      };
+    }
+    
+    if (passphrase.length < 8) {
+      return {
+        isValid: false,
+        error: "API Passphrase должен содержать минимум 8 символов",
+        errorKey: "passphrase.too_short",
+        details: { 
+          actualLength: passphrase.length,
+          exchange: normalizedExchange 
+        }
+      };
+    }
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validate all API credentials for an exchange
+ * 
+ * @param credentials - The credentials to validate
+ * @param exchange - The exchange identifier
+ * @returns Combined validation result
+ */
+export function validateCredentials(
+  credentials: { apiKey: string; apiSecret: string; passphrase?: string },
+  exchange: string
+): { isValid: boolean; errors: ApiKeyValidationResult[] } {
+  const errors: ApiKeyValidationResult[] = [];
+  
+  // Validate API Key
+  const keyResult = validateApiKeyDetailed(credentials.apiKey, exchange);
+  if (!keyResult.isValid) {
+    errors.push(keyResult);
+  }
+  
+  // Validate API Secret
+  const secretResult = validateApiSecretDetailed(credentials.apiSecret, exchange);
+  if (!secretResult.isValid) {
+    errors.push(secretResult);
+  }
+  
+  // Validate Passphrase if required
+  const passphraseResult = validatePassphrase(credentials.passphrase, exchange);
+  if (!passphraseResult.isValid) {
+    errors.push(passphraseResult);
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
+}
+
+/**
+ * Get all supported exchanges for validation
+ */
+export function getSupportedExchangesForValidation(): string[] {
+  return Object.keys(API_KEY_SPECS);
 }
 
 // ==================== SECURE STORAGE ====================

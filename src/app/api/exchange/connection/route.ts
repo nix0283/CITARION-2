@@ -6,7 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { encryptApiKey, decryptApiKey } from "@/lib/encryption";
+import { encryptApiKey, decryptApiKey, validateCredentials, validatePassphrase, validateApiKeyDetailed, validateApiSecretDetailed } from "@/lib/encryption";
 import { createExchangeClient, ExchangeId, MarketType, getSupportedExchanges, getExchangeConfig, supportsMarketType } from "@/lib/exchange";
 import { getDefaultUserId } from "@/lib/default-user";
 
@@ -105,8 +105,40 @@ export async function POST(request: NextRequest) {
       const userId = await getDefaultUserId();
 
       if (apiKey && apiSecret) {
+        // Валидация passphrase для бирж, которые его требуют
         if (config.requiresPassphrase && !passphrase) {
-          return NextResponse.json({ error: `${exchangeId} requires passphrase` }, { status: 400 });
+          return NextResponse.json({ 
+            error: `${config.name} требует API Passphrase`,
+            errorKey: 'passphrase.required',
+            details: {
+              exchange: exchangeId,
+              hint: `Создайте API ключ на ${config.name} и убедитесь, что указали Passphrase`
+            }
+          }, { status: 400 });
+        }
+
+        // Валидация формата API ключей перед сохранением
+        const validation = validateCredentials(
+          { apiKey, apiSecret, passphrase },
+          exchangeId
+        );
+
+        if (!validation.isValid) {
+          const errorMessages = validation.errors.map(e => e.error).join('. ');
+          const detailedErrors = validation.errors.map(e => ({
+            message: e.error,
+            errorKey: e.errorKey,
+            details: e.details
+          }));
+          
+          return NextResponse.json({ 
+            error: errorMessages,
+            errorKey: 'validation.failed',
+            validationErrors: detailedErrors,
+            exchange: exchangeId,
+            exchangeName: config.name,
+            hint: 'Проверьте правильность API ключей на бирже'
+          }, { status: 400 });
         }
 
         const encryptedApiKey = encryptApiKey(apiKey);
@@ -165,12 +197,45 @@ export async function POST(request: NextRequest) {
 
     if (action === "verify") {
       if (!exchangeId || !apiKey || !apiSecret) {
-        return NextResponse.json({ error: "Exchange ID, key, and secret required" }, { status: 400 });
+        return NextResponse.json({ 
+          error: "Укажите Exchange ID, API Key и API Secret",
+          errorKey: 'credentials.required'
+        }, { status: 400 });
       }
 
       const config = getExchangeConfig(exchangeId as ExchangeId);
       if (config.requiresPassphrase && !passphrase) {
-        return NextResponse.json({ error: `${exchangeId} requires passphrase` }, { status: 400 });
+        return NextResponse.json({ 
+          error: `${config.name} требует API Passphrase`,
+          errorKey: 'passphrase.required',
+          details: {
+            exchange: exchangeId,
+            hint: `Укажите Passphrase, который вы задали при создании API ключа на ${config.name}`
+          }
+        }, { status: 400 });
+      }
+
+      // Валидация формата API ключей перед проверкой соединения
+      const validation = validateCredentials(
+        { apiKey, apiSecret, passphrase },
+        exchangeId
+      );
+
+      if (!validation.isValid) {
+        const errorMessages = validation.errors.map(e => e.error).join('. ');
+        return NextResponse.json({ 
+          success: false, 
+          error: errorMessages,
+          errorKey: 'validation.failed',
+          validationErrors: validation.errors.map(e => ({
+            message: e.error,
+            errorKey: e.errorKey,
+            details: e.details
+          })),
+          exchange: exchangeId,
+          exchangeName: config.name,
+          hint: 'Проверьте правильность скопированных API ключей'
+        }, { status: 400 });
       }
 
       try {

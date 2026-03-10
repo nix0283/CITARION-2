@@ -94,11 +94,16 @@ model Account {
   exchangeType String @default("spot") // spot, futures, inverse
   exchangeName String @default("Binance") // Display name
 
-  // API Keys (only for REAL accounts, encrypted)
+  // API Keys - Legacy fields (DEPRECATED - will be migrated to encrypted storage)
   apiKey        String?
   apiSecret     String?
   apiPassphrase String? // For exchanges like OKX, KuCoin that require passphrase
   apiUid        String? // For some exchanges that require UID
+
+  // Encrypted API Credentials (NEW - AES-256-GCM encrypted JSON)
+  // JSON structure: { version, encryptedApiKey, encryptedApiSecret, encryptedPassphrase, encryptedUid }
+  encryptedApiCredentials String?
+  encryptionVersion       Int?     @default(1) // Encryption algorithm version
 
   // Sub-account support
   subAccount String?
